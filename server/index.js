@@ -23,6 +23,7 @@ app.use(cors({
   origin: [
     'https://del-norte-course-selector.vercel.app',
     'https://del-norte-course-selector.herokuapp.com',
+    'https://del-norte-course-selector.onrender.com',
     process.env.NODE_ENV === 'development' && 'http://localhost:3000'
   ].filter(Boolean),
   methods: ['GET', 'POST'],
