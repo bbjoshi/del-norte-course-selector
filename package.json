@@ -6,8 +6,15 @@
     "node": "18.x"
   },
   "dependencies": {
+<<<<<<< HEAD
     "@emotion/react": "^11.11.3",
     "@emotion/styled": "^11.11.0",
+=======
+    "@chakra-ui/react": "^2.8.2",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@firebase/auth": "^1.9.0",
+>>>>>>> 65362ba... fix: update chakra-ui version
     "@mui/icons-material": "^5.15.10",
     "@mui/material": "^5.15.10",
     "@testing-library/jest-dom": "^5.17.0",
