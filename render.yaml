@@ -31,5 +31,7 @@ services:
         sync: false
       - key: CLAUDE_API_KEY
         sync: false
+      - key: PDF_URL
+        value: "https://4.files.edl.io/f7e7/02/04/25/231513-8c9f8c2e-257a-49e3-8c4c-ef249811b38e.pdf"
     healthCheckPath: /health
     autoDeploy: true
