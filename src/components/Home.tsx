@@ -1,12 +1,30 @@
 import React from 'react';
-import { Box, Container, Heading, Text, Button, VStack } from '@chakra-ui/react';
+import { 
+  Box, 
+  Container, 
+  Heading, 
+  Text, 
+  Button, 
+  VStack, 
+  Flex, 
+  HStack, 
+  useColorModeValue,
+  Badge
+} from '@chakra-ui/react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import ChatInterface from './chat/ChatInterface';
+import PDFViewer from './PDFViewer';
 
 const Home: React.FC = () => {
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
+  const bgGradient = useColorModeValue(
+    'linear(to-r, brand.600, brand.700)',
+    'linear(to-r, brand.500, brand.600)'
+  );
+  const cardBg = useColorModeValue('white', 'gray.800');
+  const borderColor = useColorModeValue('gray.200', 'gray.700');
 
   const handleLogout = async () => {
     try {
@@ -18,31 +36,74 @@ const Home: React.FC = () => {
   };
 
   return (
-    <Container maxW="container.lg" py={6}>
-      <VStack spacing={6} align="stretch">
-        <Box textAlign="center" mb={4}>
-          <Heading size="xl" mb={2}>
-            Del Norte Course Selector
-          </Heading>
-          <Text fontSize="lg" color="gray.600">
-            Welcome to your personalized course selection assistant
-          </Text>
-        </Box>
+    <Box minH="100vh" bg="gray.50">
+      {/* Header */}
+      <Box 
+        py={4} 
+        bgGradient={bgGradient} 
+        color="white" 
+        boxShadow="md"
+      >
+        <Container maxW="container.lg">
+          <Flex align="center" justify="space-between">
+            <Heading size="lg" fontWeight="bold">
+              Del Norte Course Selector
+            </Heading>
+            
+            <HStack spacing={4}>
+              <Text fontWeight="medium">
+                {currentUser?.email}
+              </Text>
+              <Button 
+                onClick={handleLogout} 
+                colorScheme="whiteAlpha" 
+                variant="outline"
+                _hover={{ bg: 'whiteAlpha.200' }}
+                size="sm"
+              >
+                Sign Out
+              </Button>
+            </HStack>
+          </Flex>
+        </Container>
+      </Box>
 
-        <Box p={4} borderWidth={1} borderRadius="lg" bg="white">
-          <VStack spacing={4} align="stretch">
-            <Text>
-              Logged in as: <strong>{currentUser?.email}</strong>
-            </Text>
-            <Button onClick={handleLogout} colorScheme="red" size="sm">
-              Log Out
-            </Button>
-          </VStack>
-        </Box>
+      {/* Main Content */}
+      <Container maxW="container.lg" py={8}>
+        <VStack spacing={8} align="stretch">
+          {/* Welcome Section */}
+          <Box 
+            p={6} 
+            borderRadius="xl" 
+            bg={cardBg} 
+            boxShadow="md" 
+            borderWidth={1}
+            borderColor={borderColor}
+          >
+            <Flex align="center" justify="space-between" wrap="wrap">
+              <Box mb={{ base: 4, md: 0 }}>
+                <Heading size="md" mb={2} color="brand.700">
+                  Welcome to Your Course Selection Assistant
+                </Heading>
+                <Text color="gray.600">
+                  Ask questions about courses, requirements, and get personalized recommendations
+                </Text>
+              </Box>
+              
+              <HStack spacing={4}>
+                <Badge colorScheme="green" p={2} borderRadius="md" fontSize="sm">
+                  2025-2026 Catalog
+                </Badge>
+                <PDFViewer pdfUrl="https://4.files.edl.io/f7e7/02/04/25/231513-8c9f8c2e-257a-49e3-8c4c-ef249811b38e.pdf" />
+              </HStack>
+            </Flex>
+          </Box>
 
-        <ChatInterface />
-      </VStack>
-    </Container>
+          {/* Chat Interface */}
+          <ChatInterface />
+        </VStack>
+      </Container>
+    </Box>
   );
 };
 

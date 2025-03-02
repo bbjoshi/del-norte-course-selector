@@ -7,8 +7,15 @@ import {
   Text,
   Flex,
   useToast,
-  Container,
+  InputGroup,
+  InputRightElement,
+  Heading,
+  useColorModeValue,
+  Spinner,
+  Center,
 } from '@chakra-ui/react';
+import ReactMarkdown from 'react-markdown';
+import './ChatInterface.css';
 import { PDFService } from '../../services/PDFService';
 import { ChatService } from '../../services/ChatService';
 
@@ -27,6 +34,12 @@ const ChatInterface: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
 
+  // Theme colors
+  const userBubbleBg = useColorModeValue('brand.600', 'brand.500');
+  const botBubbleBg = useColorModeValue('white', 'gray.700');
+  const botBubbleBorder = useColorModeValue('gray.200', 'gray.600');
+  const chatBg = useColorModeValue('gray.50', 'gray.800');
+
   // Initialize services
   const [pdfService] = useState(() => PDFService.getInstance());
   const [chatService] = useState(() => ChatService.getInstance());
@@ -39,8 +52,23 @@ const ChatInterface: React.FC = () => {
     const initializePDF = async () => {
       try {
         setIsLoading(true);
-        await pdfService.loadPDF('https://4.files.edl.io/f7e7/02/04/25/231513-8c9f8c2e-257a-49e3-8c4c-ef249811b38e.pdf');
+        // Use the PDF URL from the server
+        await pdfService.loadPDF('/api/pdf');
         setIsInitialized(true);
+        
+        // Add welcome message
+        const welcomeMessage: Message = {
+          id: 'welcome',
+          text: "👋 Hello! I'm your Del Norte High School course selection assistant. I can help you with:\n\n" +
+                "- Finding specific courses and their requirements\n" +
+                "- Creating a 4-year course plan\n" +
+                "- Understanding graduation requirements\n" +
+                "- Recommending courses based on your interests\n\n" +
+                "How can I assist you today?",
+          sender: 'bot',
+          timestamp: new Date(),
+        };
+        setMessages([welcomeMessage]);
       } catch (error) {
         toast({
           title: 'Error',
@@ -102,24 +130,42 @@ const ChatInterface: React.FC = () => {
   };
 
   return (
-    <Container maxW="container.md" py={4}>
-      <Box
-        borderWidth={1}
-        borderRadius="lg"
-        overflow="hidden"
-        bg="white"
-        height="70vh"
-        display="flex"
-        flexDirection="column"
+    <Box
+      borderWidth={1}
+      borderRadius="xl"
+      overflow="hidden"
+      bg="white"
+      height="70vh"
+      display="flex"
+      flexDirection="column"
+      boxShadow="lg"
+    >
+      {/* Chat Header */}
+      <Box 
+        p={4} 
+        borderBottomWidth={1} 
+        bg="brand.600" 
+        color="white"
       >
-        {/* Messages Area */}
+        <Heading size="md">Course Selection Assistant</Heading>
+      </Box>
+
+      {/* Messages Area */}
+      {!isInitialized ? (
+        <Center flex={1} bg={chatBg}>
+          <VStack spacing={4}>
+            <Spinner size="xl" color="brand.500" thickness="4px" />
+            <Text color="gray.500">Loading course catalog...</Text>
+          </VStack>
+        </Center>
+      ) : (
         <VStack
           flex={1}
           overflowY="auto"
           p={4}
           spacing={4}
           align="stretch"
-          bg="gray.50"
+          bg={chatBg}
         >
           {messages.map(message => (
             <Flex
@@ -127,51 +173,70 @@ const ChatInterface: React.FC = () => {
               justify={message.sender === 'user' ? 'flex-end' : 'flex-start'}
             >
               <Box
-                maxW="70%"
-                bg={message.sender === 'user' ? 'blue.500' : 'white'}
-                color={message.sender === 'user' ? 'white' : 'black'}
-                p={3}
+                maxW={{ base: "85%", md: "70%" }}
+                bg={message.sender === 'user' ? userBubbleBg : botBubbleBg}
+                color={message.sender === 'user' ? 'white' : 'inherit'}
+                p={4}
                 borderRadius="lg"
-                boxShadow="sm"
+                boxShadow="md"
+                borderWidth={message.sender === 'bot' ? 1 : 0}
+                borderColor={message.sender === 'bot' ? botBubbleBorder : 'transparent'}
               >
-                <Text>{message.text}</Text>
+                {message.sender === 'user' ? (
+                  <Text fontWeight="medium">{message.text}</Text>
+                ) : (
+                  <Box className="markdown-content">
+                    <ReactMarkdown>{message.text}</ReactMarkdown>
+                  </Box>
+                )}
                 <Text
                   fontSize="xs"
-                  color={message.sender === 'user' ? 'white' : 'gray.500'}
-                  mt={1}
+                  color={message.sender === 'user' ? 'whiteAlpha.800' : 'gray.500'}
+                  mt={2}
+                  textAlign="right"
                 >
-                  {message.timestamp.toLocaleTimeString()}
+                  {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </Text>
               </Box>
             </Flex>
           ))}
           <div ref={messagesEndRef} />
         </VStack>
+      )}
 
-        {/* Input Area */}
-        <Box p={4} borderTopWidth={1}>
-          <form onSubmit={handleSendMessage}>
-            <Flex gap={2}>
-              <Input
-                value={inputMessage}
-                onChange={(e) => setInputMessage(e.target.value)}
-                placeholder="Ask about course selection..."
-                disabled={isLoading || !isInitialized}
-              />
+      {/* Input Area */}
+      <Box p={4} borderTopWidth={1} bg="white">
+        <form onSubmit={handleSendMessage}>
+          <InputGroup size="lg">
+            <Input
+              value={inputMessage}
+              onChange={(e) => setInputMessage(e.target.value)}
+              placeholder="Ask about courses, requirements, or recommendations..."
+              disabled={isLoading || !isInitialized}
+              pr="4.5rem"
+              focusBorderColor="brand.500"
+              borderRadius="md"
+              boxShadow="sm"
+              _hover={{ borderColor: 'brand.300' }}
+            />
+            <InputRightElement width="4.5rem">
               <Button
+                h="1.75rem"
+                size="sm"
                 type="submit"
-                colorScheme="blue"
+                colorScheme="brand"
                 isLoading={isLoading}
                 loadingText="Sending"
-                disabled={!isInitialized}
+                disabled={!isInitialized || !inputMessage.trim()}
+                borderRadius="md"
               >
                 Send
               </Button>
-            </Flex>
-          </form>
-        </Box>
+            </InputRightElement>
+          </InputGroup>
+        </form>
       </Box>
-    </Container>
+    </Box>
   );
 };
 

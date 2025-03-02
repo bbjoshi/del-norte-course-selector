@@ -45,7 +45,7 @@ export class PDFService {
       await this.initializePDFJS();
       
       // Use our proxy server to fetch the PDF
-      const response = await axios.get('http://localhost:3002/api/pdf', {
+      const response = await axios.get('/api/pdf', {
         responseType: 'arraybuffer'
       });
       const data = new Uint8Array(response.data);
@@ -66,7 +66,7 @@ export class PDFService {
       }
 
       // Store the extracted text on the server
-      await axios.post('http://localhost:3002/api/pdf/content', {
+      await axios.post('/api/pdf/content', {
         content: fullText
       });
 
@@ -80,8 +80,38 @@ export class PDFService {
 
   public async searchCourses(query: string): Promise<string> {
     try {
-      const response = await axios.get('http://localhost:3002/api/pdf/search', {
-        params: { query }
+      // Enhance query for better course planning results
+      let enhancedQuery = query;
+      
+      // If query is about a 4-year plan or pathway for a specific field
+      if (query.toLowerCase().includes('plan') || 
+          query.toLowerCase().includes('pathway') || 
+          query.toLowerCase().includes('major') ||
+          query.toLowerCase().includes('career')) {
+        
+        // Add relevant keywords to improve search results
+        const fieldMatches = query.match(/for\s+(\w+\s+\w+|\w+)/i);
+        const field = fieldMatches ? fieldMatches[1].toLowerCase() : '';
+        
+        if (field) {
+          // Add field-specific keywords
+          if (field.includes('engineer') || field === 'engineering') {
+            enhancedQuery += ' mathematics physics calculus engineering technology design';
+          } else if (field.includes('computer') || field.includes('software') || field.includes('programming')) {
+            enhancedQuery += ' computer science programming technology AP';
+          } else if (field.includes('medic') || field.includes('doctor') || field.includes('health')) {
+            enhancedQuery += ' biology chemistry anatomy physiology health science';
+          } else if (field.includes('business') || field.includes('finance') || field.includes('economics')) {
+            enhancedQuery += ' economics business finance mathematics statistics';
+          }
+        }
+        
+        // Always add general planning keywords
+        enhancedQuery += ' prerequisite requirements recommended pathway grade level';
+      }
+      
+      const response = await axios.get('/api/pdf/search', {
+        params: { query: enhancedQuery }
       });
       
       if (response.data.results.length === 0) {
