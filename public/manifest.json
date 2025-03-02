@@ -1,6 +1,6 @@
 {
-  "short_name": "React App",
-  "name": "Create React App Sample",
+  "short_name": "DN Courses",
+  "name": "Del Norte Course Selector",
   "icons": [
     {
       "src": "favicon.ico",
