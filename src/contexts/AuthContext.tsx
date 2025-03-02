@@ -38,8 +38,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const checkAdminStatus = async (user: User) => {
     try {
+      // Try to get user document from Firestore
+      console.log(`Checking admin status for user: ${user.uid}`);
       const userDoc = await getDoc(doc(db, 'users', user.uid));
-      return userDoc.exists() && userDoc.data()?.role === 'admin';
+      const isAdmin = userDoc.exists() && userDoc.data()?.role === 'admin';
+      console.log(`User admin status: ${isAdmin}`);
+      return isAdmin;
     } catch (error) {
       console.error('Error checking admin status:', error);
       // In case of Firestore error, default to non-admin
@@ -48,8 +52,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signup = async (email: string, password: string) => {
+    console.log(`Signing up user with email: ${email}`);
     const { user } = await createUserWithEmailAndPassword(auth, email, password);
+    console.log(`User created successfully with UID: ${user.uid}`);
+    
     try {
+      console.log(`Creating user document in Firestore for UID: ${user.uid}`);
       await setDoc(doc(db, 'users', user.uid), {
         email: user.email,
         role: 'user',
@@ -67,18 +75,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signInWithGoogle = async () => {
+    console.log('Initiating Google sign-in');
     const provider = new GoogleAuthProvider();
     const { user } = await signInWithPopup(auth, provider);
+    console.log(`Google sign-in successful for user: ${user.uid}`);
     
     try {
+      console.log(`Checking if user document exists for UID: ${user.uid}`);
       const userDoc = await getDoc(doc(db, 'users', user.uid));
+      
       if (!userDoc.exists()) {
+        console.log(`Creating new user document for Google user: ${user.uid}`);
         await setDoc(doc(db, 'users', user.uid), {
           email: user.email,
           role: 'user',
           createdAt: new Date().toISOString()
         });
         console.log('Google user document created successfully');
+      } else {
+        console.log('User document already exists for Google user');
       }
     } catch (error) {
       console.error('Error checking/creating user document:', error);
@@ -106,11 +121,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } catch (error) {
         console.error('Error in auth state change:', error);
+        // Even if there's an error, set the current user if available
+        // This ensures the app can function even with Firestore issues
         if (user) {
           setCurrentUser(user);
         }
         setIsAdmin(false);
       } finally {
+        // Always set loading to false to allow the app to render
         setLoading(false);
       }
     });
