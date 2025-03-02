@@ -48,7 +48,8 @@ async function generateEmbeddings(texts) {
     return response.data.data.map(item => item.embedding);
   } catch (error) {
     console.error('Error generating embeddings:', error);
-    throw error;
+    // Return empty array to gracefully degrade to traditional search
+    return [];
   }
 }
 
