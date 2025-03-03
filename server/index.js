@@ -729,6 +729,33 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Debug endpoint to check PDF processing status
+app.get('/debug/pdf-status', (req, res) => {
+  res.json({
+    pdfContentAvailable: !!pdfContent,
+    pdfContentLength: pdfContent ? pdfContent.length : 0,
+    vectorSearchAvailable: vectorSearchAvailable,
+    vectorCount: inMemoryVectors.length,
+    vectorSample: inMemoryVectors.length > 0 ? [
+      {
+        id: inMemoryVectors[0].id,
+        text: inMemoryVectors[0].text,
+        embeddingLength: inMemoryVectors[0].embedding ? inMemoryVectors[0].embedding.length : 0
+      }
+    ] : [],
+    courseCounts: {
+      math: courseStructure.math.length,
+      science: courseStructure.science.length,
+      english: courseStructure.english.length,
+      languages: courseStructure.languages.length,
+      engineering: courseStructure.engineering.length,
+      electives: courseStructure.electives.length
+    },
+    mathSample: courseStructure.math.slice(0, 3),
+    scienceSample: courseStructure.science.slice(0, 3)
+  });
+});
+
 // Serve React app for all other routes
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'build', 'index.html'));
