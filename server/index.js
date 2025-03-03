@@ -605,11 +605,11 @@ app.post('/api/chat', async (req, res) => {
            - Highlight advanced placement, honors, and specialized courses that align with expressed interests
            - For interests spanning multiple disciplines, include courses from all relevant subject areas
            - Present each recommended course with complete details from the catalog
+           - Avoid suggesting courses that do not exist in the catalog
+           - Present course codes in the format (123456) and include page numbers for reference
 
         5. Be conversational and helpful, asking follow-up questions when necessary to better understand the student's specific needs.
-        6. If the query is unclear or too broad, ask clarifying questions to narrow down the focus.
-        7. Always provide accurate, up-to-date information based on the latest course catalog.
-        8. If the query is about a specific course, provide the course code and title, and include the page number from the catalog.
+
         Remember that this catalog is organized by subject areas rather than majors. Avoid inventing courses that don't exist in the catalog, and verify all course codes and details before providing information or recommendations.
         
         Course Catalog Information:
