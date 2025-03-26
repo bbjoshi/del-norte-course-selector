@@ -26,15 +26,18 @@ let courseStructure = {
   electives: []
 };
 
-// Generate embeddings using OpenRouter (Claude)
+// Generate embeddings using OpenRouter (OpenAI)
 async function generateEmbeddings(texts) {
   try {
+    // Create the request payload with proper JSON formatting
+    const payload = JSON.stringify({
+      model: 'openai/text-embedding-3-small',
+      input: texts
+    });
+    
     const response = await axios.post(
       'https://openrouter.ai/api/v1/embeddings',
-      {
-        model: 'openai/text-embedding-ada-002',
-        input: texts
-      },
+      payload,
       {
         headers: {
           'Content-Type': 'application/json',
