@@ -712,10 +712,21 @@ app.get('/api/vector-search', async (req, res) => {
   }
 });
 
+// Version endpoint
+app.get('/version', (req, res) => {
+  const packageJson = require('../package.json');
+  res.json({ 
+    version: packageJson.version,
+    name: packageJson.name
+  });
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
+  const packageJson = require('../package.json');
   res.json({ 
     status: 'ok',
+    version: packageJson.version,
     hasPdfContent: !!pdfContent,
     hasVectorSearch: vectorSearchAvailable,
     vectorCount: inMemoryVectors.length,
