@@ -41,20 +41,14 @@ try {
   console.error("Error initializing Firestore:", error);
   console.warn("Using a non-throwing Firestore implementation to allow the app to function");
   
-  // Create a minimal implementation for Firestore that doesn't throw errors
+    // Create a minimal implementation for Firestore that doesn't throw errors
   // This allows the app to function with authentication even if Firestore is unavailable
-  db = {
-    collection: () => ({
-      doc: () => ({
-        get: () => Promise.resolve({
-          exists: () => false,
-          data: () => null
-        }),
-        set: () => Promise.resolve(),
-        update: () => Promise.resolve()
-      })
-    })
-  } as unknown as Firestore;
+  // The implementation needs to be compatible with the modular API (doc, getDoc, setDoc)
+  db = getFirestore(app);
+  
+  // We'll just use the real Firestore instance but wrap operations in try/catch in the AuthContext
+  // This is simpler and more type-safe than trying to create a mock implementation
+  console.log("Using real Firestore instance with error handling in AuthContext");
 }
 
 export { db };
