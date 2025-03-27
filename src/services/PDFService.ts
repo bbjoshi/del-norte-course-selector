@@ -42,21 +42,34 @@ export class PDFService {
     }
 
     try {
+      console.log('Initializing PDF.js...');
       await this.initializePDFJS();
       
-      // Use our proxy server to fetch the PDF
+      console.log('Fetching PDF from server...');
+      // Use our proxy server to fetch the PDF with a timeout
       const response = await axios.get('/api/pdf', {
-        responseType: 'arraybuffer'
+        responseType: 'arraybuffer',
+        timeout: 30000 // 30 second timeout
       });
+      
+      // Verify we have valid data
+      if (!response.data || response.data.byteLength === 0) {
+        throw new Error('Received empty PDF data from server');
+      }
+      
+      console.log(`PDF data received, size: ${response.data.byteLength} bytes`);
       const data = new Uint8Array(response.data);
       
       // Load the PDF document
+      console.log('Loading PDF document with PDF.js...');
       const pdf = await pdfjsLib.getDocument({ data }).promise;
+      console.log(`PDF loaded successfully with ${pdf.numPages} pages`);
       
       let fullText = '';
       
       // Extract text from each page
       for (let i = 1; i <= pdf.numPages; i++) {
+        console.log(`Processing page ${i} of ${pdf.numPages}...`);
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
         const pageText = textContent.items
@@ -65,16 +78,39 @@ export class PDFService {
         fullText += pageText + '\n';
       }
 
+      console.log(`Text extraction complete, total length: ${fullText.length} characters`);
+      
       // Store the extracted text on the server
+      console.log('Storing extracted text on server...');
       await axios.post('/api/pdf/content', {
         content: fullText
       });
+      console.log('Text stored successfully on server');
 
       this.courseData = fullText;
       return fullText;
-    } catch (error) {
+    } catch (error: any) {
+      // More detailed error logging
       console.error('Error loading PDF:', error);
-      throw new Error('Failed to load course catalog PDF');
+      
+      // Log specific error details based on error type
+      if (axios.isAxiosError(error)) {
+        if (error.response) {
+          console.error('Server responded with error status:', error.response.status);
+          console.error('Error response data:', error.response.data);
+        } else if (error.request) {
+          console.error('No response received from server');
+        } else {
+          console.error('Error setting up request:', error.message);
+        }
+      }
+      
+      // Provide more specific error message if possible
+      const errorMessage = axios.isAxiosError(error) && error.response?.status === 502
+        ? 'Server error (502 Bad Gateway). The server might be overloaded or temporarily down.'
+        : 'Failed to load course catalog PDF';
+      
+      throw new Error(errorMessage);
     }
   }
 

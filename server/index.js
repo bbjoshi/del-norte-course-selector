@@ -246,19 +246,37 @@ app.get('/api/pdf', async (req, res) => {
   try {
     console.log('Fetching PDF...');
     const pdfUrl = process.env.PDF_URL || 'https://4.files.edl.io/f7e7/02/04/25/231513-8c9f8c2e-257a-49e3-8c4c-ef249811b38e.pdf';
+    
+    console.log(`Attempting to fetch PDF from URL: ${pdfUrl}`);
+    
+    // Add timeout to prevent hanging requests
     const response = await axios.get(pdfUrl, {
       responseType: 'arraybuffer',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      }
+      },
+      timeout: 30000 // 30 second timeout
     });
     
     console.log('PDF fetched successfully');
     
+    // Verify we have valid PDF data
+    if (!response.data || response.data.length === 0) {
+      throw new Error('Received empty PDF data');
+    }
+    
     // Process PDF for vector database in the background
-    processPDFForVectorDB(response.data).then(success => {
-      console.log(`PDF processing for vector search ${success ? 'completed' : 'failed'}`);
-    });
+    // Use a try/catch to prevent background processing errors from affecting the response
+    try {
+      processPDFForVectorDB(response.data).then(success => {
+        console.log(`PDF processing for vector search ${success ? 'completed' : 'failed'}`);
+      }).catch(err => {
+        console.error('Background PDF processing error:', err);
+      });
+    } catch (processingError) {
+      console.error('Error starting PDF processing:', processingError);
+      // Continue with the response even if background processing fails
+    }
     
     res.setHeader('Content-Type', 'application/pdf');
     res.send(response.data);
