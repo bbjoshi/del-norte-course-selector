@@ -6,10 +6,11 @@ import {
   signOut,
   onAuthStateChanged,
   GoogleAuthProvider,
-  signInWithPopup
+  signInWithPopup,
+  Auth
 } from 'firebase/auth';
 import { auth, db } from '../config/firebase';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, Firestore } from 'firebase/firestore';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -35,9 +36,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  // Check if Firebase services are available
+  const isFirebaseAvailable = !!auth;
+  const isFirestoreAvailable = !!db;
+
+  if (!isFirebaseAvailable) {
+    console.error('Firebase Auth is not available');
+    setAuthError('Firebase authentication service is not available');
+  }
 
   const checkAdminStatus = async (user: User) => {
     try {
+      // Check if Firestore is available
+      if (!db) {
+        console.error('Firestore is not available, cannot check admin status');
+        return false;
+      }
+      
       // Try to get user document from Firestore
       console.log(`Checking admin status for user: ${user.uid}`);
       const userDoc = await getDoc(doc(db, 'users', user.uid));
@@ -52,58 +69,87 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signup = async (email: string, password: string) => {
+    if (!auth) {
+      throw new Error('Firebase authentication is not available');
+    }
+    
     console.log(`Signing up user with email: ${email}`);
     const { user } = await createUserWithEmailAndPassword(auth, email, password);
     console.log(`User created successfully with UID: ${user.uid}`);
     
-    try {
-      console.log(`Creating user document in Firestore for UID: ${user.uid}`);
-      await setDoc(doc(db, 'users', user.uid), {
-        email: user.email,
-        role: 'user',
-        createdAt: new Date().toISOString()
-      });
-      console.log('User document created successfully');
-    } catch (error) {
-      console.error('Error creating user document:', error);
-      // Continue even if Firestore fails - authentication still works
-    }
-  };
-
-  const login = async (email: string, password: string) => {
-    await signInWithEmailAndPassword(auth, email, password);
-  };
-
-  const signInWithGoogle = async () => {
-    console.log('Initiating Google sign-in');
-    const provider = new GoogleAuthProvider();
-    const { user } = await signInWithPopup(auth, provider);
-    console.log(`Google sign-in successful for user: ${user.uid}`);
-    
-    try {
-      console.log(`Checking if user document exists for UID: ${user.uid}`);
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
-      
-      if (!userDoc.exists()) {
-        console.log(`Creating new user document for Google user: ${user.uid}`);
+    if (db) {
+      try {
+        console.log(`Creating user document in Firestore for UID: ${user.uid}`);
         await setDoc(doc(db, 'users', user.uid), {
           email: user.email,
           role: 'user',
           createdAt: new Date().toISOString()
         });
-        console.log('Google user document created successfully');
-      } else {
-        console.log('User document already exists for Google user');
+        console.log('User document created successfully');
+      } catch (error) {
+        console.error('Error creating user document:', error);
+        // Continue even if Firestore fails - authentication still works
       }
-    } catch (error) {
-      console.error('Error checking/creating user document:', error);
-      // Continue even if Firestore fails - authentication still works
+    } else {
+      console.warn('Firestore not available, skipping user document creation');
     }
   };
 
-  const logout = () => signOut(auth);
+  const login = async (email: string, password: string) => {
+    if (!auth) {
+      throw new Error('Firebase authentication is not available');
+    }
+    await signInWithEmailAndPassword(auth, email, password);
+  };
+
+  const signInWithGoogle = async () => {
+    if (!auth) {
+      throw new Error('Firebase authentication is not available');
+    }
+    
+    console.log('Initiating Google sign-in');
+    const provider = new GoogleAuthProvider();
+    const { user } = await signInWithPopup(auth, provider);
+    console.log(`Google sign-in successful for user: ${user.uid}`);
+    
+    if (db) {
+      try {
+        console.log(`Checking if user document exists for UID: ${user.uid}`);
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        
+        if (!userDoc.exists()) {
+          console.log(`Creating new user document for Google user: ${user.uid}`);
+          await setDoc(doc(db, 'users', user.uid), {
+            email: user.email,
+            role: 'user',
+            createdAt: new Date().toISOString()
+          });
+          console.log('Google user document created successfully');
+        } else {
+          console.log('User document already exists for Google user');
+        }
+      } catch (error) {
+        console.error('Error checking/creating user document:', error);
+        // Continue even if Firestore fails - authentication still works
+      }
+    } else {
+      console.warn('Firestore not available, skipping user document creation');
+    }
+  };
+
+  const logout = async () => {
+    if (!auth) {
+      throw new Error('Firebase authentication is not available');
+    }
+    return signOut(auth);
+  };
 
   useEffect(() => {
+    if (!auth) {
+      setLoading(false);
+      return () => {};
+    }
+    
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       try {
         if (user) {
@@ -148,7 +194,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <AuthContext.Provider value={value}>
-      {!loading && children}
+      {authError ? (
+        <div style={{ padding: '20px', color: 'red', textAlign: 'center' }}>
+          <h2>Authentication Error</h2>
+          <p>{authError}</p>
+          <p>Please check your Firebase configuration and try again.</p>
+        </div>
+      ) : (
+        !loading && children
+      )}
     </AuthContext.Provider>
   );
 };
