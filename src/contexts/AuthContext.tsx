@@ -6,11 +6,10 @@ import {
   signOut,
   onAuthStateChanged,
   GoogleAuthProvider,
-  signInWithPopup,
-  Auth
+  signInWithPopup
 } from 'firebase/auth';
 import { auth, db } from '../config/firebase';
-import { doc, setDoc, getDoc, Firestore } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -40,7 +39,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Check if Firebase services are available
   const isFirebaseAvailable = !!auth;
-  const isFirestoreAvailable = !!db;
 
   if (!isFirebaseAvailable) {
     console.error('Firebase Auth is not available');
