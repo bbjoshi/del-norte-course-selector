@@ -1,15 +1,15 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, Firestore } from 'firebase/firestore';
+import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 
-// Use hardcoded Firebase configuration to ensure correct values
+// Use environment variables for Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyBWecUxj14oE5TLqAi8NApBnz97Z9mxJPo",
-  authDomain: "del-norte-course-selecto-bcb4c.firebaseapp.com",
-  projectId: "del-norte-course-selecto-bcb4c",
-  storageBucket: "del-norte-course-selecto-bcb4c.firebasestorage.app",
-  messagingSenderId: "1032248739611",
-  appId: "1:1032248739611:web:1d982f2c31206a68d9f5be"
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
+  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.REACT_APP_FIREBASE_APP_ID
 };
 
 console.log("Initializing Firebase with config:", {
@@ -21,34 +21,16 @@ console.log("Initializing Firebase with config:", {
 const app = initializeApp(firebaseConfig);
 console.log("Firebase app initialized successfully");
 
-// Initialize services
+// Initialize Auth
 export const auth = getAuth(app);
 console.log("Firebase Auth initialized successfully");
 
-// Get Firestore database name from environment variables
-const firestoreDbName = process.env.REACT_APP_FIREBASE_FIRESTORE_DB || 'del-norte-course-selector-firestore-db';
+// Initialize Firestore
+export const db = getFirestore(app);
+console.log("Firestore initialized successfully");
 
-// Initialize Firestore with the correct database name
-let db: Firestore;
-try {
-  console.log(`Attempting to initialize Firestore with database name: ${firestoreDbName}`);
-  
-  // Initialize Firestore with the app instance
-  db = getFirestore(app);
-  
-  console.log("Firestore initialized successfully");
-} catch (error) {
-  console.error("Error initializing Firestore:", error);
-  console.warn("Using a non-throwing Firestore implementation to allow the app to function");
-  
-    // Create a minimal implementation for Firestore that doesn't throw errors
-  // This allows the app to function with authentication even if Firestore is unavailable
-  // The implementation needs to be compatible with the modular API (doc, getDoc, setDoc)
-  db = getFirestore(app);
-  
-  // We'll just use the real Firestore instance but wrap operations in try/catch in the AuthContext
-  // This is simpler and more type-safe than trying to create a mock implementation
-  console.log("Using real Firestore instance with error handling in AuthContext");
+// Connect to Firestore emulator if enabled
+if (process.env.REACT_APP_USE_FIREBASE_EMULATOR === 'true') {
+  console.log("Connecting to Firestore emulator");
+  connectFirestoreEmulator(db, 'localhost', 8080);
 }
-
-export { db };
