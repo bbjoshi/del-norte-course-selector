@@ -15,8 +15,14 @@ class ChatService {
    */
   async processQuery(conversationHistory, userQuery) {
     try {
-      if (!process.env.REACT_APP_OPENROUTER_API_KEY) {
-        throw new Error('No API key configured for OpenRouter');
+      // Get relevant info for the query
+      let relevantInfo = await this.getRelevantInfo(userQuery);
+      
+      // Check if OpenRouter API key is configured
+      const apiKey = process.env.OPENROUTER_API_KEY || process.env.REACT_APP_OPENROUTER_API_KEY;
+      if (!apiKey || apiKey.includes('12345')) {
+        console.log('No valid OpenRouter API key configured, using fallback response');
+        return this.generateFallbackResponse(userQuery, relevantInfo);
       }
 
       // Define maximum allowed messages to prevent excessively large requests
@@ -33,9 +39,6 @@ class ChatService {
         trimmedHistory = [...firstMessages, ...recentMessages];
         console.log(`Trimmed conversation history from ${conversationHistory.length} to ${trimmedHistory.length} messages`);
       }
-      
-      // Get relevant info for the query
-      let relevantInfo = await this.getRelevantInfo(userQuery);
       
       // Prepare the system message with instructions and relevant info
       const systemMessage = {
@@ -68,7 +71,7 @@ class ChatService {
              - Highlight advanced placement, honors, and specialized courses that align with expressed interests
              - For interests spanning multiple disciplines, include courses from all relevant subject areas
              - Present each recommended course with complete details from the catalog
-             - Avoid suggesting courses that do not exist in the catalog
+             - Avoid suggesting courses that don't exist in the catalog
              - Present course codes in the format (123456) and include page numbers for reference
 
           5. Be conversational and helpful, asking follow-up questions when necessary to better understand the student's specific needs.
@@ -85,30 +88,35 @@ class ChatService {
       // Create a new array with the system message followed by the conversation history
       const messages = [systemMessage, ...trimmedHistory];
 
-      console.log('Sending request to OpenRouter API with conversation history...');
-      const response = await axios.post(
-        'https://openrouter.ai/api/v1/chat/completions',
-        {
-          model: 'anthropic/claude-3-opus:20240229',
-          messages: messages,
-          max_tokens: 4000
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.REACT_APP_OPENROUTER_API_KEY}`,
-            'HTTP-Referer': 'https://del-norte-course-selector.vercel.app',
-            'X-Title': 'Del Norte Course Selector'
+      try {
+        console.log('Sending request to OpenRouter API with conversation history...');
+        const response = await axios.post(
+          'https://openrouter.ai/api/v1/chat/completions',
+          {
+            model: 'anthropic/claude-3-opus:20240229',
+            messages: messages,
+            max_tokens: 4000
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${apiKey}`,
+              'HTTP-Referer': 'https://del-norte-course-selector.vercel.app',
+              'X-Title': 'Del Norte Course Selector'
+            }
           }
-        }
-      );
-      
-      console.log('Received response from OpenRouter');
-      
-      return response.data.choices[0].message.content;
+        );
+        
+        console.log('Received response from OpenRouter');
+        return response.data.choices[0].message.content;
+      } catch (apiError) {
+        console.error('Error calling OpenRouter API:', apiError);
+        // Fall back to the basic response if API call fails
+        return this.generateFallbackResponse(userQuery, relevantInfo);
+      }
     } catch (error) {
-      console.error('Error calling OpenRouter API:', error);
-      throw new Error('Failed to get response from OpenRouter: ' + error.message);
+      console.error('Error in processQuery:', error);
+      return "I'm sorry, I couldn't process your question. Please try again or check the course catalog directly.";
     }
   }
 
@@ -161,43 +169,67 @@ class ChatService {
   }
 
   /**
+   * Generate a fallback response when OpenRouter API is not available
+   * @param {string} query - User query
+   * @param {string} relevantInfo - Relevant information from search
+   * @returns {string} - Fallback response
+   */
+  generateFallbackResponse(query, relevantInfo) {
+    // Format the relevant information into a readable response
+    if (!relevantInfo || relevantInfo === "I couldn't find any specific information about that in the course catalog.") {
+      return "I'm sorry, I couldn't find specific information about that in the course catalog. Please try a different search term or check the course catalog directly.";
+    }
+
+    // Create a simple response with the search results
+    return `Here's what I found in the course catalog about "${query}":\n\n${relevantInfo}\n\nFor more detailed information, please refer to the complete course catalog.`;
+  }
+
+  /**
    * Summarize conversation
    * @param {Array<{role: string, content: string}>} messages - Messages to summarize
    * @returns {Promise<string>} - Conversation summary
    */
   async summarizeConversation(messages) {
     try {
-      if (!process.env.REACT_APP_OPENROUTER_API_KEY) {
-        throw new Error('No API key configured for OpenRouter');
+      // Check if OpenRouter API key is configured
+      const apiKey = process.env.OPENROUTER_API_KEY || process.env.REACT_APP_OPENROUTER_API_KEY;
+      if (!apiKey || apiKey.includes('12345')) {
+        console.log('No valid OpenRouter API key configured, returning simple summary');
+        return "Previous conversation about course selection and requirements.";
       }
 
       if (messages.length === 0) {
         throw new Error('No messages provided for summarization');
       }
 
-      console.log('Summarizing conversation...');
-      const response = await axios.post(
-        'https://openrouter.ai/api/v1/chat/completions',
-        {
-          model: 'anthropic/claude-3-haiku:20240307',  // Using a smaller model for summarization
-          messages: messages,
-          max_tokens: 1000
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.REACT_APP_OPENROUTER_API_KEY}`,
-            'HTTP-Referer': 'https://del-norte-course-selector.vercel.app',
-            'X-Title': 'Del Norte Course Selector'
+      try {
+        console.log('Summarizing conversation...');
+        const response = await axios.post(
+          'https://openrouter.ai/api/v1/chat/completions',
+          {
+            model: 'anthropic/claude-3-haiku:20240307',  // Using a smaller model for summarization
+            messages: messages,
+            max_tokens: 1000
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${apiKey}`,
+              'HTTP-Referer': 'https://del-norte-course-selector.vercel.app',
+              'X-Title': 'Del Norte Course Selector'
+            }
           }
-        }
-      );
-      
-      console.log('Received summarization response');
-      return response.data.choices[0].message.content;
+        );
+        
+        console.log('Received summarization response');
+        return response.data.choices[0].message.content;
+      } catch (apiError) {
+        console.error('Error calling OpenRouter API for summarization:', apiError);
+        return "Previous conversation about course selection and requirements.";
+      }
     } catch (error) {
-      console.error('Error summarizing conversation:', error);
-      throw new Error('Failed to summarize conversation: ' + error.message);
+      console.error('Error in summarizeConversation:', error);
+      return "Previous conversation about course selection and requirements.";
     }
   }
 }

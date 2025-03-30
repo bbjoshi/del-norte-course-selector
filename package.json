@@ -7,7 +7,7 @@
   },
   "resolutions": {
     "nth-check": "^2.0.1",
-    "postcss": "^8.4.31",
+    "postcss": "8.4.31",
     "serialize-javascript": "^6.0.2",
     "undici": "^6.22.0"
   },
@@ -52,7 +52,10 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "heroku-postbuild": "npm run build"
+    "heroku-postbuild": "npm run build",
+    "backup-chromadb": "node scripts/backup-chromadb.js",
+    "restore-chromadb": "node scripts/restore-chromadb.js",
+    "setup-chromadb": "bash setup-chromadb.sh"
   },
   "eslintConfig": {
     "extends": [

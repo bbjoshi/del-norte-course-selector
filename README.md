@@ -2,6 +2,23 @@
 
 An intelligent course selection assistant for Del Norte High School students. The application helps students explore courses, understand prerequisites, and create academic plans tailored to their interests and career goals.
 
+## Vector Search Enhancement
+
+This application now supports ChromaDB for enhanced vector search capabilities. ChromaDB provides:
+
+- Persistent storage of embeddings
+- Better search performance
+- Higher quality search results
+- Scalability for larger datasets
+
+To set up ChromaDB, run the provided setup script:
+
+```bash
+./setup-chromadb.sh
+```
+
+Or follow the manual setup instructions in [CHROMADB_SETUP.md](CHROMADB_SETUP.md).
+
 ## Features
 
 - Interactive chat interface powered by Claude AI
@@ -19,6 +36,7 @@ An intelligent course selection assistant for Del Norte High School students. Th
 - Authentication: Firebase
 - Database: Firebase Realtime Database
 - PDF Processing: PDF.js
+- Vector Search: ChromaDB (optional)
 
 ## Environment Variables
 
@@ -38,6 +56,9 @@ REACT_APP_OPENROUTER_API_KEY=your_api_key
 
 # Optional PDF URL (defaults to Del Norte catalog if not provided)
 PDF_URL=your_pdf_url
+
+# ChromaDB URL (optional, for vector search enhancement)
+CHROMADB_URL=http://localhost:8000
 
 # Production settings
 NODE_ENV=production
