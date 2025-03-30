@@ -4,9 +4,17 @@ This guide explains how to deploy the Del Norte Course Selector application with
 
 ## Overview
 
-The deployment consists of two main components:
-1. **Web Service**: The Node.js application (Del Norte Course Selector)
-2. **Docker Service**: ChromaDB running in a Docker container
+Since Render.com doesn't offer Docker services directly, we'll use alternative approaches for deploying ChromaDB:
+
+**Option 1: Use a Web Service with a Custom Dockerfile**
+- Deploy ChromaDB as a web service using a custom Dockerfile
+- Deploy the Node.js application as a separate web service
+
+**Option 2: Use an External ChromaDB Service**
+- Use a third-party hosted ChromaDB service or self-host on another platform
+- Deploy only the Node.js application on Render.com
+
+This guide will focus on Option 1, which keeps everything on Render.com.
 
 ## Prerequisites
 
@@ -15,74 +23,96 @@ The deployment consists of two main components:
 - VoyageAI API key for embeddings
 - OpenRouter API key for chat functionality
 
-## Step 1: Set Up ChromaDB as a Docker Service
+## Step 1: Create a ChromaDB Repository with Dockerfile
 
-1. Log in to your Render.com dashboard
-2. Click on "New" and select "Docker Service"
-3. Connect your GitHub repository or use the following settings for a public image:
-   - **Name**: `chromadb`
-   - **Image**: `chromadb/chroma:latest`
-   - **Region**: Choose the region closest to your users
-   - **Instance Type**: Start with "Starter" ($7/month) and scale as needed
-   - **Disk**: Add at least 1GB persistent disk for ChromaDB data storage
-   - **Environment Variables**: None required for basic setup
-   - **Port**: `8000`
+1. Create a new repository for ChromaDB deployment
+2. Add a `Dockerfile` with the following content:
 
-4. Under "Advanced" settings, add a persistent volume:
-   - **Mount Path**: `/chroma/chroma`
-   - **Volume Size**: 1GB (increase as needed)
+```dockerfile
+FROM chromadb/chroma:latest
 
-5. Click "Create Docker Service"
+# Expose the port
+EXPOSE 8000
 
-## Step 2: Set Up the Web Service
+# Set the entry point
+ENTRYPOINT ["uvicorn", "chromadb.app:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+3. Add a `render.yaml` file with the following content:
+
+```yaml
+services:
+  - type: web
+    name: chromadb-service
+    env: docker
+    plan: standard
+    dockerfilePath: ./Dockerfile
+    disk:
+      name: chroma-data
+      mountPath: /chroma/chroma
+      sizeGB: 1
+    envVars:
+      - key: ALLOW_RESET
+        value: "true"
+    healthCheckPath: /api/v1/heartbeat
+```
+
+## Step 2: Deploy ChromaDB to Render.com
+
+1. Push your ChromaDB repository to GitHub
+2. Log in to your Render.com dashboard
+3. Click on "New" and select "Blueprint"
+4. Connect your ChromaDB GitHub repository
+5. Render will detect the `render.yaml` file and configure the service
+6. Click "Apply" to create the ChromaDB service
+7. Wait for the service to deploy and note the URL (e.g., `https://chromadb-service.onrender.com`)
+
+## Step 3: Set Up the Web Service for Del Norte Course Selector
 
 1. In your Render.com dashboard, click on "New" and select "Web Service"
-2. Connect your GitHub repository
+2. Connect your Del Norte Course Selector GitHub repository
 3. Configure the service:
    - **Name**: `del-norte-course-selector`
    - **Region**: Same as your ChromaDB service
-   - **Branch**: `main` (or your production branch)
+   - **Branch**: `chroma-integration` (or your production branch)
    - **Root Directory**: Leave empty if your app is at the root
    - **Runtime**: `Node`
    - **Build Command**: `npm install && npm run build`
    - **Start Command**: `node server/index.js`
    - **Instance Type**: Start with "Starter" ($7/month) and scale as needed
+   - **Health Check Path**: `/health`
 
 4. Add the following environment variables:
    ```
    NODE_ENV=production
    PORT=3000
-   CHROMADB_URL=https://chromadb.onrender.com
+   CHROMADB_URL=https://chromadb-service.onrender.com
    VOYAGE_API_KEY=your_voyage_api_key
    OPENROUTER_API_KEY=your_openrouter_api_key
    PDF_URL=https://4.files.edl.io/f7e7/02/04/25/231513-8c9f8c2e-257a-49e3-8c4c-ef249811b38e.pdf
    ```
 
-   Replace `your_voyage_api_key` and `your_openrouter_api_key` with your actual API keys.
+   Replace `your_voyage_api_key` and `your_openrouter_api_key` with your actual API keys, and update the ChromaDB URL to match your deployed ChromaDB service.
 
 5. Click "Create Web Service"
 
-## Step 3: Configure Internal Network Access
+## Step 4: Alternative Option - Using External ChromaDB Service
 
-To allow your web service to communicate with ChromaDB securely:
+If you prefer not to host ChromaDB on Render.com, you can:
 
-1. Go to your Render.com dashboard
-2. Navigate to "Network" and create a new private network
-3. Add both your web service and ChromaDB service to this network
-4. Update the `CHROMADB_URL` environment variable in your web service to use the internal network URL:
-   ```
-   CHROMADB_URL=http://chromadb:8000
-   ```
+1. Host ChromaDB on another platform like:
+   - AWS using ECS or EC2
+   - Google Cloud Run
+   - DigitalOcean with Docker
+   - Self-hosted server
 
-## Step 4: Update Your Application Code
+2. Update the `CHROMADB_URL` environment variable in your Render.com web service to point to your external ChromaDB instance
 
-Ensure your application code is ready for production:
+This approach may offer more flexibility and potentially better performance, but requires managing multiple platforms.
 
-1. Make sure error handling is robust
-2. Implement connection retries for ChromaDB
-3. Add proper logging
+## Step 5: Verify Your Application Code is Production-Ready
 
-Here's an example of improved ChromaDB initialization with retries:
+The VectorSearchService.js file already includes robust error handling and connection retries for ChromaDB:
 
 ```javascript
 async initializeChromaDB() {
@@ -144,36 +174,41 @@ async initializeChromaDB() {
 }
 ```
 
-## Step 5: Initial Data Loading
+This code ensures that your application will:
+1. Try to connect to ChromaDB multiple times
+2. Fall back to in-memory storage if ChromaDB is unavailable
+3. Log detailed information about connection attempts
+
+## Step 6: Initial Data Loading
 
 After deployment, you'll need to load your course catalog data into ChromaDB:
 
-1. Access your application
-2. Trigger the PDF processing endpoint:
+1. Wait for both services to be fully deployed
+2. Access your application's PDF processing endpoint:
    ```
-   curl -o course_catalog.pdf https://your-app.onrender.com/api/pdf
+   curl -X GET https://del-norte-course-selector.onrender.com/api/pdf
    ```
 
 3. Monitor the logs to ensure the PDF is processed and vectors are added to ChromaDB
 
-## Step 6: Monitoring and Scaling
+## Step 7: Monitoring and Scaling
 
 ### Monitoring
 
 1. Set up Render.com alerts for both services
-2. Monitor disk usage for ChromaDB
+2. Use the `/health` endpoint to monitor application status
 3. Set up logging to track API usage and performance
 
 ### Scaling
 
 As your application grows, you may need to scale:
 
-1. **ChromaDB Service**:
+1. **ChromaDB Web Service**:
    - Upgrade to a larger instance type
    - Increase disk size
    - Consider sharding for very large datasets
 
-2. **Web Service**:
+2. **Application Web Service**:
    - Upgrade to a larger instance type
    - Enable auto-scaling if needed
 
@@ -190,59 +225,37 @@ To optimize costs while using ChromaDB on Render.com:
    - Generate embeddings in batches
 
 3. **Scheduled Scaling**:
-   - Scale down during low-traffic periods
-   - Scale up during high-traffic periods
+   - Use Render.com's "Suspend" feature for non-production environments
+   - Consider using a cron job to wake up the service only when needed
 
 ## Backup Strategy
 
-To ensure data durability:
+The project already includes backup and restore scripts in the `scripts/` directory:
 
-1. **Regular Backups**:
-   - Set up a scheduled job to export ChromaDB data
-   - Store backups in a secure location (e.g., AWS S3)
+1. **backup-chromadb.js**: Exports ChromaDB data to JSON
+2. **restore-chromadb.js**: Imports data from JSON back to ChromaDB
 
-2. **Backup Script**:
-   Create a script to export ChromaDB data:
+To set up regular backups:
 
-   ```javascript
-   const { ChromaClient } = require('chromadb');
-   const fs = require('fs');
-   
-   async function backupChromaDB() {
-     const client = new ChromaClient({
-       path: process.env.CHROMADB_URL
-     });
-     
-     const collections = await client.listCollections();
-     
-     for (const collectionInfo of collections) {
-       const collection = await client.getCollection({
-         name: collectionInfo.name
-       });
-       
-       const data = await collection.get();
-       
-       fs.writeFileSync(
-         `backup_${collectionInfo.name}_${new Date().toISOString()}.json`,
-         JSON.stringify(data, null, 2)
-       );
-       
-       console.log(`Backed up collection: ${collectionInfo.name}`);
-     }
-   }
-   
-   backupChromaDB().catch(console.error);
-   ```
+1. Create a new Cron Job in Render.com
+2. Configure it to run the backup script daily
+3. Store backups in a secure location (e.g., AWS S3)
+
+Example cron job command:
+```
+node scripts/backup-chromadb.js && aws s3 cp backups/* s3://your-bucket/chromadb-backups/
+```
 
 ## Security Considerations
 
 1. **API Keys**:
    - Store API keys as environment variables
    - Rotate keys regularly
+   - Use Render.com's environment variable encryption
 
 2. **Network Security**:
-   - Use Render.com's private networking
-   - Restrict access to ChromaDB service
+   - Consider setting up a Render.com private network if available
+   - Implement proper authentication for your API endpoints
 
 3. **Data Protection**:
    - Implement rate limiting
@@ -269,6 +282,6 @@ To ensure data durability:
 
 ## Conclusion
 
-By following this guide, you can successfully deploy a ChromaDB-based solution on Render.com for production use. The setup provides a scalable, reliable, and cost-effective way to leverage vector search capabilities in your application.
+By following this guide, you can successfully deploy a ChromaDB-based solution on Render.com for production use, even without a dedicated Docker service option. The setup provides a scalable, reliable, and cost-effective way to leverage vector search capabilities in your application.
 
 Remember to monitor your resources, implement proper error handling, and regularly back up your data to ensure a robust production deployment.
