@@ -1,0 +1,201 @@
+Starting embeddings test...
+
+1. Checking current embeddings status...
+Current embeddings status: {
+  inProgress: false,
+  complete: false,
+  error: null,
+  progress: 0,
+  vectorCount: 0,
+  vectorSearchAvailable: false
+}
+
+2. No vectors available. Triggering PDF processing...
+Extracting text from PDF...
+Warning: TT: undefined function: 32
+Warning: TT: undefined function: 32
+Extracted 146066 characters from PDF
+Sending PDF content to server...
+Waiting for embeddings to be generated...
+Embeddings generation progress: 0%
+Embeddings generation progress: 0%
+Embeddings generation progress: 0%
+Embeddings generation progress: 0%
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation progress: 0%
+Progress appears to be stagnant. Checking server status...
+Server health status: ok
+Vector count from health check: 0
+Embeddings generation timed out or failed after 60 seconds.
+Checking for errors...
+Final debug information:
+- Vector search available: false
+- Vector count: 0
+- Embeddings generation in progress: false
+- Embeddings generation complete: false
+- Embeddings generation error: null
+
+3. Getting detailed debug information...
+Debug information:
+- PDF content available: true
+- PDF content length: 138951
+- Vector search available: false
+- Vector count: 0
+- Embeddings generation in progress: false
+- Embeddings generation complete: false
+- Embeddings generation error: null
+
+4. Testing vector search with multiple queries...
+
+Testing query: "What math courses are available for 9th grade?"
+Sending query to vector search endpoint...
+Vector search results:
+No results from vector search for this query. This might indicate a problem.
+Testing traditional search as fallback...
+Found 15 results from traditional search
+Traditional search is working as a fallback for this query.
+
+Testing query: "Tell me about AP Chemistry"
+Sending query to vector search endpoint...
+Vector search results:
+No results from vector search for this query. This might indicate a problem.
+Testing traditional search as fallback...
+Found 15 results from traditional search
+Traditional search is working as a fallback for this query.
+
+Testing query: "What are the engineering electives?"
+Sending query to vector search endpoint...
+Vector search results:
+No results from vector search for this query. This might indicate a problem.
+Testing traditional search as fallback...
+Found 15 results from traditional search
+Traditional search is working as a fallback for this query.
+
+Testing query: "What courses fulfill the UC requirements?"
+Sending query to vector search endpoint...
+Vector search results:
+No results from vector search for this query. This might indicate a problem.
+Testing traditional search as fallback...
+Found 15 results from traditional search
+Traditional search is working as a fallback for this query.
+
+Vector search success rate: 0/4 queries (0.00%)
+
+5. Testing chat endpoint (which should use vector search internally)...
+Chat response received successfully!
+Response preview: Here are the math courses available for 9th grade students at Del Norte High School, with brief descriptions:
+
+1. MATH ACCEL 1-2 (001022-001023)
+   - ...
+The chat endpoint is working, which should be using vector search if available.
+
+6. Final embeddings status check:
+Final embeddings status: {
+  inProgress: false,
+  complete: false,
+  error: null,
+  progress: 0,
+  vectorCount: 0,
+  vectorSearchAvailable: false
+}
+
+UNKNOWN: Could not determine the status of vector embeddings.

@@ -9,11 +9,16 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const app = express();
 const port = process.env.PORT || 3003;
 
-// Flag to indicate if vector search is available
-let vectorSearchAvailable = false;
+const VectorSearchService = require('./services/VectorSearchService');
+const PDFService = require('./services/PDFService');
+const SearchService = require('./services/SearchService');
+const ChatService = require('./services/ChatService');
 
-// In-memory vector store as fallback
-let inMemoryVectors = [];
+// Flags to track embedding generation status
+let embeddingsGenerationInProgress = false;
+let embeddingsGenerationComplete = false;
+let embeddingsGenerationError = null;
+let embeddingsGenerationProgress = 0;
 
 // Store PDF content in memory
 let pdfContent = null;
@@ -26,175 +31,79 @@ let courseStructure = {
   electives: []
 };
 
-// Generate embeddings using OpenRouter (OpenAI)
-async function generateEmbeddings(texts) {
-  try {
-    // Create the request payload with proper JSON formatting
-    const payload = JSON.stringify({
-      model: 'openai/text-embedding-3-small',
-      input: texts
-    });
-    
-    const response = await axios.post(
-      'https://openrouter.ai/api/v1/embeddings',
-      payload,
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.REACT_APP_OPENROUTER_API_KEY}`,
-          'HTTP-Referer': 'https://del-norte-course-selector.vercel.app',
-          'X-Title': 'Del Norte Course Selector'
-        }
-      }
-    );
-    
-    return response.data.data.map(item => item.embedding);
-  } catch (error) {
-    console.error('Error generating embeddings:', error);
-    // Return empty array to gracefully degrade to traditional search
-    return [];
-  }
-}
-
-// Calculate cosine similarity between two vectors
-function cosineSimilarity(vecA, vecB) {
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-  
-  for (let i = 0; i < vecA.length; i++) {
-    dotProduct += vecA[i] * vecB[i];
-    normA += vecA[i] * vecA[i];
-    normB += vecB[i] * vecB[i];
-  }
-  
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-}
-
-// Function to split text into chunks
-function splitTextIntoChunks(text, maxChunkSize = 1000, overlap = 200) {
-  // Clean the text
-  const cleanedText = text
-    .replace(/\s+/g, ' ')
-    .trim();
-  
-  // Split into paragraphs first
-  let paragraphs = cleanedText.split(/(?:\r?\n){2,}/);
-  paragraphs = paragraphs.filter(p => p.trim().length > 0);
-  
-  const chunks = [];
-  let currentChunk = '';
-  
-  for (const paragraph of paragraphs) {
-    // If adding this paragraph would exceed max size, save current chunk and start a new one
-    if (currentChunk.length + paragraph.length > maxChunkSize && currentChunk.length > 0) {
-      chunks.push(currentChunk.trim());
-      
-      // Start new chunk with overlap from the end of the previous chunk
-      const overlapText = currentChunk.length > overlap 
-        ? currentChunk.slice(-overlap) 
-        : currentChunk;
-      
-      currentChunk = overlapText + ' ' + paragraph;
-    } else {
-      // Add paragraph to current chunk
-      if (currentChunk.length > 0) {
-        currentChunk += ' ';
-      }
-      currentChunk += paragraph;
-    }
-  }
-  
-  // Add the last chunk if it's not empty
-  if (currentChunk.trim().length > 0) {
-    chunks.push(currentChunk.trim());
-  }
-  
-  return chunks;
-}
-
-// Function to process PDF and add to in-memory vector store
+// Function to process PDF and add to vector store
 async function processPDFForVectorDB(pdfBuffer) {
   try {
-    // Parse PDF
+    // Set flags to indicate processing has started
+    embeddingsGenerationInProgress = true;
+    embeddingsGenerationComplete = false;
+    embeddingsGenerationError = null;
+    embeddingsGenerationProgress = 0;
+    
+    // Create a progress tracking function to pass to PDFService
+    const updateProgress = (progress) => {
+      embeddingsGenerationProgress = Math.min(Math.round(progress), 100);
+      console.log(`Embeddings generation progress updated: ${embeddingsGenerationProgress}%`);
+    };
+    
+    // Extract text from PDF to get total chunks for progress calculation
     const pdfData = await pdfParse(pdfBuffer);
     const text = pdfData.text;
+    const chunks = PDFService.splitTextIntoChunks(text);
+    const totalChunks = chunks.length;
     
-    // Split text into chunks (paragraphs)
-    const chunks = splitTextIntoChunks(text);
+    // Set up progress monitoring
+    let processedChunks = 0;
+    const originalAddVectors = VectorSearchService.addVectors.bind(VectorSearchService);
     
-    // Skip if we already have vectors
-    if (inMemoryVectors.length > 0) {
-      console.log('In-memory vector store already populated, skipping insertion');
-      return true;
+    // Override addVectors temporarily to track progress
+    VectorSearchService.addVectors = (vectors) => {
+      const result = originalAddVectors(vectors);
+      processedChunks += vectors.length;
+      const progress = (processedChunks / totalChunks) * 100;
+      updateProgress(progress);
+      return result;
+    };
+    
+    console.log(`Starting embeddings generation for ${totalChunks} chunks...`);
+    
+    // Use PDFService to process the PDF
+    const success = await PDFService.processPDFForVectorDB(pdfBuffer);
+    
+    // Restore original function
+    VectorSearchService.addVectors = originalAddVectors;
+    
+    // Update flags based on result
+    embeddingsGenerationComplete = true;
+    embeddingsGenerationInProgress = false;
+    embeddingsGenerationProgress = 100;
+    
+    if (!success) {
+      embeddingsGenerationError = "PDF processing completed but no vectors were generated";
+      console.error(embeddingsGenerationError);
+    } else {
+      console.log(`Successfully generated embeddings for ${VectorSearchService.getVectorCount()} chunks`);
     }
     
-    if (chunks.length > 0) {
-      console.log(`Adding ${chunks.length} chunks to in-memory vector store...`);
-      
-      // Process chunks in batches to avoid overwhelming the API
-      const batchSize = 10;
-      for (let i = 0; i < chunks.length; i += batchSize) {
-        const batch = chunks.slice(i, i + batchSize);
-        try {
-          // Generate embeddings for this batch
-          const embeddings = await generateEmbeddings(batch);
-          
-          // Store chunks with their embeddings
-          for (let j = 0; j < batch.length; j++) {
-            inMemoryVectors.push({
-              id: `chunk-${i + j}`,
-              text: batch[j],
-              embedding: embeddings[j]
-            });
-          }
-          
-          console.log(`Processed batch ${i / batchSize + 1}/${Math.ceil(chunks.length / batchSize)}`);
-        } catch (error) {
-          console.error(`Error processing batch ${i / batchSize + 1}:`, error);
-          // Continue with next batch
-        }
-      }
-      
-      console.log(`Successfully added ${inMemoryVectors.length} vectors to in-memory store`);
-      vectorSearchAvailable = inMemoryVectors.length > 0;
-    }
-    
-    return true;
+    return success;
   } catch (error) {
-    console.error('Error processing PDF for vector database:', error);
+    console.error('Error processing PDF for vector database:', error.message);
+    if (error.stack) {
+      console.error('Stack trace:', error.stack);
+    }
+    
+    embeddingsGenerationError = error.message;
+    embeddingsGenerationComplete = false;
+    embeddingsGenerationInProgress = false;
+    
+    // Log detailed error information
+    if (error.response) {
+      console.error('Response status:', error.response.status);
+      console.error('Response headers:', JSON.stringify(error.response.headers));
+      console.error('Response data:', JSON.stringify(error.response.data));
+    }
+    
     return false;
-  }
-}
-
-// Function to search in-memory vector store
-async function searchVectorDB(query, topK = 5) {
-  try {
-    if (!vectorSearchAvailable || inMemoryVectors.length === 0) {
-      console.log('Vector search not available');
-      return [];
-    }
-    
-    // Generate embedding for the query
-    const queryEmbeddings = await generateEmbeddings([query]);
-    const queryEmbedding = queryEmbeddings[0];
-    
-    // Calculate similarity scores
-    const scoredResults = inMemoryVectors.map(item => ({
-      text: item.text,
-      score: cosineSimilarity(queryEmbedding, item.embedding)
-    }));
-    
-    // Sort by similarity score and take top results
-    const topResults = scoredResults
-      .sort((a, b) => b.score - a.score)
-      .slice(0, topK)
-      .map(item => item.text);
-    
-    return topResults;
-  } catch (error) {
-    console.error('Error searching vector database:', error);
-    return [];
   }
 }
 
@@ -218,28 +127,6 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 // Serve static files from the React build
 app.use(express.static(path.join(__dirname, '..', 'build')));
 
-// Helper function to categorize courses
-function categorizeCourses(content) {
-  const lines = content.split('\n');
-  let currentCategory = '';
-  
-  lines.forEach(line => {
-    if (line.toLowerCase().includes('mathematics')) {
-      currentCategory = 'math';
-    } else if (line.toLowerCase().includes('science')) {
-      currentCategory = 'science';
-    } else if (line.toLowerCase().includes('english')) {
-      currentCategory = 'english';
-    } else if (line.toLowerCase().includes('world language')) {
-      currentCategory = 'languages';
-    } else if (line.toLowerCase().includes('engineering') || line.toLowerCase().includes('technology')) {
-      currentCategory = 'engineering';
-    } else if (currentCategory && line.match(/\(\d{6}\)/)) {
-      // Line contains a course code
-      courseStructure[currentCategory].push(line.trim());
-    }
-  });
-}
 
 // PDF proxy endpoint
 app.get('/api/pdf', async (req, res) => {
@@ -265,16 +152,21 @@ app.get('/api/pdf', async (req, res) => {
       throw new Error('Received empty PDF data');
     }
     
-    // Process PDF for vector database in the background
-    // Use a try/catch to prevent background processing errors from affecting the response
+    // Process PDF for vector database
+    // Use a try/catch to prevent processing errors from affecting the response
     try {
+      // Start processing in the background
       processPDFForVectorDB(response.data).then(success => {
         console.log(`PDF processing for vector search ${success ? 'completed' : 'failed'}`);
       }).catch(err => {
         console.error('Background PDF processing error:', err);
+        embeddingsGenerationError = err.message;
+        embeddingsGenerationInProgress = false;
       });
     } catch (processingError) {
       console.error('Error starting PDF processing:', processingError);
+      embeddingsGenerationError = processingError.message;
+      embeddingsGenerationInProgress = false;
       // Continue with the response even if background processing fails
     }
     
@@ -298,14 +190,9 @@ app.post('/api/pdf/content', (req, res) => {
       return res.status(400).json({ error: 'No content provided' });
     }
     
-    // Clean and normalize the text
-    const cleanContent = content
-      .replace(/\s+/g, ' ')  // Replace multiple spaces with single space
-      .trim();
-    
-    pdfContent = cleanContent;
-    categorizeCourses(cleanContent);
-    console.log('PDF content stored and categorized, length:', cleanContent.length);
+    // Use PDFService to store and categorize the content
+    PDFService.storePDFContent(content);
+    console.log('PDF content stored and categorized');
     res.json({ success: true });
   } catch (error) {
     console.error('Error storing PDF content:', error);
@@ -439,52 +326,14 @@ app.get('/api/pdf/search', (req, res) => {
     return res.status(400).json({ error: 'No search query provided' });
   }
   
+  const pdfContent = PDFService.getPDFContent();
   if (!pdfContent) {
     return res.status(404).json({ error: 'PDF content not loaded' });
   }
 
   try {
-    // Split content into paragraphs and clean them
-    const paragraphs = pdfContent
-      .split(/[.!?]\s+/)  // Split on sentence boundaries
-      .map(p => p.trim())
-      .filter(p => p.length > 0);
-
-    // Create search patterns
-    const patterns = createSearchPatterns(query);
-    console.log('Search patterns:', patterns.map(p => p.toString()));
-
-    // Search for relevant paragraphs with scoring
-    const scoredParagraphs = paragraphs.map(paragraph => ({
-      text: paragraph,
-      score: scoreParagraph(paragraph, patterns, query)
-    }));
-
-    // Sort by relevance score and take top results
-    const relevantParagraphs = scoredParagraphs
-      .filter(p => p.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 15)  // Take top 15 most relevant paragraphs
-      .map(p => p.text);
-
+    const relevantParagraphs = SearchService.search(pdfContent, query);
     console.log(`Found ${relevantParagraphs.length} relevant paragraphs for query: ${query}`);
-
-    // If no results, try a more lenient search
-    if (relevantParagraphs.length === 0) {
-      const queryWords = query.toLowerCase().split(/\s+/);
-      const lenientResults = paragraphs.filter(p => {
-        const paragraphWords = p.toLowerCase().split(/\s+/);
-        return queryWords.some(word => 
-          word.length > 3 && paragraphWords.some(pWord => pWord.includes(word))
-        );
-      }).slice(0, 8);  // Take top 8 results from lenient search
-
-      if (lenientResults.length > 0) {
-        console.log('Found results with lenient search');
-        return res.json({ results: lenientResults });
-      }
-    }
-
     res.json({ results: relevantParagraphs });
   } catch (error) {
     console.error('Error searching PDF content:', error);
@@ -495,7 +344,8 @@ app.get('/api/pdf/search', (req, res) => {
 // Claude API proxy endpoint
 app.post('/api/chat', async (req, res) => {
   try {
-    if (!process.env.REACT_APP_OPENROUTER_API_KEY) {
+    const openRouterApiKey = process.env.REACT_APP_OPENROUTER_API_KEY;
+    if (!openRouterApiKey) {
       throw new Error('No API key configured for OpenRouter');
     }
 
@@ -530,67 +380,39 @@ app.post('/api/chat', async (req, res) => {
     // If no relevant info was provided, search for it
     if (!relevantInfo) {
       // Search vector database for relevant content
-      const vectorResults = await searchVectorDB(userQuery, 5);
+      const vectorResults = await VectorSearchService.search(userQuery, 5);
       console.log(`Found ${vectorResults.length} results from vector search`);
       
       // Combine vector search results
       relevantInfo = vectorResults.join('\n\n');
       
       // If vector search didn't return results, fall back to traditional search
-      if (!relevantInfo && pdfContent) {
+      if (!relevantInfo) {
         console.log('Falling back to traditional search...');
+        const pdfContent = PDFService.getPDFContent();
         
-        // Split content into paragraphs
-        const paragraphs = pdfContent
-          .split(/[.!?]\s+/)
-          .map(p => p.trim())
-          .filter(p => p.length > 0);
-
-        // Create search patterns
-        const patterns = createSearchPatterns(userQuery);
-        
-        // Search for relevant paragraphs with scoring
-        const scoredParagraphs = paragraphs.map(paragraph => ({
-          text: paragraph,
-          score: scoreParagraph(paragraph, patterns, userQuery)
-        }));
-
-        // Sort by relevance score and take top results
-        const relevantParagraphs = scoredParagraphs
-          .filter(p => p.score > 0)
-          .sort((a, b) => b.score - a.score)
-          .slice(0, 15)  // Take top 15 most relevant paragraphs
-          .map(p => p.text);
-
-        relevantInfo = relevantParagraphs.join('\n\n');
-        
-        // Add structured course information for relevant categories
-        if (userQuery.toLowerCase().includes('plan') || userQuery.toLowerCase().includes('pathway')) {
-          relevantInfo += '\n\nAvailable courses by category:\n';
-          if (courseStructure.math.length > 0) {
-            relevantInfo += '\nMathematics:\n' + courseStructure.math.join('\n');
+        if (pdfContent) {
+          const relevantParagraphs = SearchService.search(pdfContent, userQuery);
+          relevantInfo = relevantParagraphs.join('\n\n');
+          
+          // Add structured course information for relevant categories
+          const courseStructure = PDFService.getCourseStructure();
+          if (userQuery.toLowerCase().includes('plan') || userQuery.toLowerCase().includes('pathway')) {
+            relevantInfo += '\n\nAvailable courses by category:\n';
+            if (courseStructure.math.length > 0) {
+              relevantInfo += '\nMathematics:\n' + courseStructure.math.join('\n');
+            }
+            if (courseStructure.science.length > 0) {
+              relevantInfo += '\nScience:\n' + courseStructure.science.join('\n');
+            }
+            if (courseStructure.engineering.length > 0) {
+              relevantInfo += '\nEngineering & Technology:\n' + courseStructure.engineering.join('\n');
+            }
           }
-          if (courseStructure.science.length > 0) {
-            relevantInfo += '\nScience:\n' + courseStructure.science.join('\n');
+          
+          if (!relevantInfo) {
+            relevantInfo = "I couldn't find any specific information about that in the course catalog.";
           }
-          if (courseStructure.engineering.length > 0) {
-            relevantInfo += '\nEngineering & Technology:\n' + courseStructure.engineering.join('\n');
-          }
-        }
-
-        // If still no results, try lenient search
-        if (!relevantInfo) {
-          const queryWords = userQuery.toLowerCase().split(/\s+/);
-          const lenientResults = paragraphs.filter(p => {
-            const paragraphWords = p.toLowerCase().split(/\s+/);
-            return queryWords.some(word => 
-              word.length > 3 && paragraphWords.some(pWord => pWord.includes(word))
-            );
-          }).slice(0, 8);  // Take top 8 results from lenient search
-
-          relevantInfo = lenientResults.length > 0 
-            ? lenientResults.join('\n\n')
-            : "I couldn't find any specific information about that in the course catalog.";
         }
       }
     }
@@ -654,7 +476,7 @@ app.post('/api/chat', async (req, res) => {
       {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.REACT_APP_OPENROUTER_API_KEY}`,
+          'Authorization': `Bearer ${openRouterApiKey}`,
           'HTTP-Referer': 'https://del-norte-course-selector.vercel.app',
           'X-Title': 'Del Norte Course Selector'
         }
@@ -679,7 +501,8 @@ app.post('/api/chat', async (req, res) => {
 // Summarize conversation endpoint
 app.post('/api/summarize', async (req, res) => {
   try {
-    if (!process.env.REACT_APP_OPENROUTER_API_KEY) {
+    const openRouterApiKey = process.env.REACT_APP_OPENROUTER_API_KEY;
+    if (!openRouterApiKey) {
       throw new Error('No API key configured for OpenRouter');
     }
 
@@ -699,7 +522,7 @@ app.post('/api/summarize', async (req, res) => {
       {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.REACT_APP_OPENROUTER_API_KEY}`,
+          'Authorization': `Bearer ${openRouterApiKey}`,
           'HTTP-Referer': 'https://del-norte-course-selector.vercel.app',
           'X-Title': 'Del Norte Course Selector'
         }
@@ -725,12 +548,39 @@ app.get('/api/vector-search', async (req, res) => {
       return res.status(400).json({ error: 'No search query provided' });
     }
     
-    const results = await searchVectorDB(query, 5);
+    // Check if embeddings generation is still in progress
+    if (embeddingsGenerationInProgress) {
+      return res.status(202).json({ 
+        status: 'processing',
+        message: 'Embeddings generation is still in progress',
+        progress: embeddingsGenerationProgress
+      });
+    }
+    
+    // Check if there was an error during embeddings generation
+    if (embeddingsGenerationError) {
+      console.warn('Using traditional search due to embeddings generation error:', embeddingsGenerationError);
+      return res.status(200).json({ results: [] }); // Return empty results to trigger fallback
+    }
+    
+    const results = await VectorSearchService.search(query, 5);
     res.json({ results });
   } catch (error) {
-    console.error('Error searching vector database:', error);
+    console.error('Error searching vector database:', error.message);
     res.status(500).json({ error: 'Failed to search vector database' });
   }
+});
+
+// Embeddings status endpoint
+app.get('/api/embeddings-status', (req, res) => {
+  res.json({
+    inProgress: embeddingsGenerationInProgress,
+    complete: embeddingsGenerationComplete,
+    error: embeddingsGenerationError,
+    progress: embeddingsGenerationProgress,
+    vectorCount: VectorSearchService.getVectorCount(),
+    vectorSearchAvailable: VectorSearchService.isAvailable()
+  });
 });
 
 // Version endpoint
@@ -745,12 +595,15 @@ app.get('/version', (req, res) => {
 // Health check endpoint
 app.get('/health', (req, res) => {
   const packageJson = require('../package.json');
+  const pdfContent = PDFService.getPDFContent();
+  const courseStructure = PDFService.getCourseStructure();
+  
   res.json({ 
     status: 'ok',
     version: packageJson.version,
     hasPdfContent: !!pdfContent,
-    hasVectorSearch: vectorSearchAvailable,
-    vectorCount: inMemoryVectors.length,
+    hasVectorSearch: VectorSearchService.isAvailable(),
+    vectorCount: VectorSearchService.getVectorCount(),
     contentLength: pdfContent ? pdfContent.length : 0,
     courseCounts: {
       math: courseStructure.math.length,
@@ -765,16 +618,23 @@ app.get('/health', (req, res) => {
 
 // Debug endpoint to check PDF processing status
 app.get('/debug/pdf-status', (req, res) => {
+  const pdfContent = PDFService.getPDFContent();
+  const courseStructure = PDFService.getCourseStructure();
+  
   res.json({
     pdfContentAvailable: !!pdfContent,
     pdfContentLength: pdfContent ? pdfContent.length : 0,
-    vectorSearchAvailable: vectorSearchAvailable,
-    vectorCount: inMemoryVectors.length,
-    vectorSample: inMemoryVectors.length > 0 ? [
+    vectorSearchAvailable: VectorSearchService.isAvailable(),
+    vectorCount: VectorSearchService.getVectorCount(),
+    embeddingsGenerationInProgress: embeddingsGenerationInProgress,
+    embeddingsGenerationComplete: embeddingsGenerationComplete,
+    embeddingsGenerationError: embeddingsGenerationError,
+    embeddingsGenerationProgress: embeddingsGenerationProgress,
+    vectorSample: VectorSearchService.getVectorCount() > 0 ? [
       {
-        id: inMemoryVectors[0].id,
-        text: inMemoryVectors[0].text,
-        embeddingLength: inMemoryVectors[0].embedding ? inMemoryVectors[0].embedding.length : 0
+        id: 'sample-vector',
+        text: 'Sample vector text (actual text not shown for brevity)',
+        embeddingLength: 'Sample embedding length (actual length not shown for brevity)'
       }
     ] : [],
     courseCounts: {

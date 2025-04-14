@@ -13,7 +13,9 @@ import {
   useColorModeValue,
   Spinner,
   Center,
+  Progress,
 } from '@chakra-ui/react';
+import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import './ChatInterface.css';
 import { PDFService } from '../../services/PDFService';
@@ -31,6 +33,14 @@ const ChatInterface: React.FC = () => {
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [embeddingsStatus, setEmbeddingsStatus] = useState({
+    inProgress: false,
+    complete: false,
+    error: null,
+    progress: 0,
+    vectorCount: 0,
+    vectorSearchAvailable: false
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
 
@@ -48,12 +58,34 @@ const ChatInterface: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  // Function to check embeddings status
+  const checkEmbeddingsStatus = async () => {
+    try {
+      const response = await axios.get('/api/embeddings-status');
+      setEmbeddingsStatus(response.data);
+      
+      // If embeddings generation is complete or there was an error, stop polling
+      if (response.data.complete || response.data.error) {
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Error checking embeddings status:', error);
+      return false;
+    }
+  };
+
   useEffect(() => {
     const initializePDF = async () => {
       try {
         setIsLoading(true);
         // Use the PDF URL from the server
         await pdfService.loadPDF('/api/pdf');
+        
+        // Check initial embeddings status
+        await checkEmbeddingsStatus();
+        
+        // Set initialized to true to show the chat interface
         setIsInitialized(true);
         
         // Add welcome message
@@ -69,6 +101,19 @@ const ChatInterface: React.FC = () => {
           timestamp: new Date(),
         };
         setMessages([welcomeMessage]);
+        
+        // Start polling for embeddings status if in progress
+        if (embeddingsStatus.inProgress) {
+          const pollInterval = setInterval(async () => {
+            const isDone = await checkEmbeddingsStatus();
+            if (isDone) {
+              clearInterval(pollInterval);
+            }
+          }, 2000); // Check every 2 seconds
+          
+          // Clean up interval on component unmount
+          return () => clearInterval(pollInterval);
+        }
       } catch (error) {
         toast({
           title: 'Error',
@@ -158,6 +203,27 @@ const ChatInterface: React.FC = () => {
             <Text color="gray.500">Loading course catalog...</Text>
           </VStack>
         </Center>
+      ) : embeddingsStatus.inProgress ? (
+        <Center flex={1} bg={chatBg}>
+          <VStack spacing={4} width="80%">
+            <Spinner size="md" color="brand.500" thickness="3px" />
+            <Text color="gray.700" fontWeight="medium">Generating AI embeddings for better search results...</Text>
+            <Progress 
+              value={embeddingsStatus.progress} 
+              size="sm" 
+              width="100%" 
+              colorScheme="brand" 
+              hasStripe
+              isAnimated
+            />
+            <Text color="gray.500" fontSize="sm">
+              {embeddingsStatus.progress}% complete ({embeddingsStatus.vectorCount} vectors generated)
+            </Text>
+            <Text color="gray.600" fontSize="sm" mt={2}>
+              You can start chatting now, but search results will improve once this process completes.
+            </Text>
+          </VStack>
+        </Center>
       ) : (
         <VStack
           flex={1}
@@ -206,6 +272,11 @@ const ChatInterface: React.FC = () => {
 
       {/* Input Area */}
       <Box p={4} borderTopWidth={1} bg="white">
+        {embeddingsStatus.error && (
+          <Text color="orange.500" mb={2} fontSize="sm">
+            Note: Advanced search is unavailable. Using traditional search instead.
+          </Text>
+        )}
         <form onSubmit={handleSendMessage}>
           <InputGroup size="lg">
             <Input

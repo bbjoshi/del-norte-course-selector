@@ -1,6 +1,15 @@
 import axios from 'axios';
 import { PDFService } from './PDFService';
 
+interface EmbeddingsStatus {
+  inProgress: boolean;
+  complete: boolean;
+  error: string | null;
+  progress: number;
+  vectorCount: number;
+  vectorSearchAvailable: boolean;
+}
+
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
@@ -25,28 +34,92 @@ export class ChatService {
     return ChatService.instance;
   }
 
+  /**
+   * Check the status of embeddings generation
+   */
+  public async checkEmbeddingsStatus(): Promise<EmbeddingsStatus> {
+    try {
+      const response = await axios.get('/api/embeddings-status');
+      return response.data;
+    } catch (error) {
+      console.error('Error checking embeddings status:', error);
+      // Return a default status if the request fails
+      return {
+        inProgress: false,
+        complete: false,
+        error: 'Failed to check embeddings status',
+        progress: 0,
+        vectorCount: 0,
+        vectorSearchAvailable: false
+      };
+    }
+  }
+
+  /**
+   * Process a user query and get a response
+   */
   public async processQuery(query: string): Promise<string> {
     try {
       // First try vector search
       let relevantInfo = '';
+      let vectorSearchAttempted = false;
       
       try {
-        // Use vector search API
-        const vectorResponse = await axios.get('/api/vector-search', {
-          params: { query }
-        });
+        // Check embeddings status first
+        const embeddingsStatus = await this.checkEmbeddingsStatus();
         
-        if (vectorResponse.data.results && vectorResponse.data.results.length > 0) {
-          console.log('Using vector search results');
-          relevantInfo = vectorResponse.data.results.join('\n\n');
+        // If embeddings are still being generated, we can either:
+        // 1. Wait for them to complete (if they're close to done)
+        // 2. Fall back to traditional search immediately
+        if (embeddingsStatus.inProgress) {
+          // If progress is over 90%, wait a bit for it to complete
+          if (embeddingsStatus.progress > 90) {
+            console.log('Embeddings almost complete, waiting briefly...');
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+            
+            // Check status again
+            const updatedStatus = await this.checkEmbeddingsStatus();
+            if (!updatedStatus.inProgress && updatedStatus.vectorSearchAvailable) {
+              // Now we can use vector search
+              const vectorResponse = await axios.get('/api/vector-search', {
+                params: { query }
+              });
+              
+              if (vectorResponse.data.results && vectorResponse.data.results.length > 0) {
+                console.log('Using vector search results');
+                relevantInfo = vectorResponse.data.results.join('\n\n');
+                vectorSearchAttempted = true;
+              }
+            } else {
+              console.log('Embeddings still not ready, falling back to traditional search');
+            }
+          } else {
+            console.log('Embeddings still being generated, falling back to traditional search');
+          }
+        } else if (!embeddingsStatus.error) {
+          // Embeddings are ready, use vector search
+          const vectorResponse = await axios.get('/api/vector-search', {
+            params: { query }
+          });
+          
+          if (vectorResponse.data.results && vectorResponse.data.results.length > 0) {
+            console.log('Using vector search results');
+            relevantInfo = vectorResponse.data.results.join('\n\n');
+            vectorSearchAttempted = true;
+          }
         }
       } catch (vectorError) {
         console.warn('Vector search failed, falling back to traditional search:', vectorError);
+        vectorSearchAttempted = true;
       }
       
-      // If vector search didn't return results, fall back to traditional search
+      // If vector search didn't return results or wasn't attempted, fall back to traditional search
       if (!relevantInfo) {
-        console.log('Falling back to traditional search');
+        if (vectorSearchAttempted) {
+          console.log('Falling back to traditional search');
+        } else {
+          console.log('Using traditional search');
+        }
         relevantInfo = await this.pdfService.searchCourses(query);
       }
 

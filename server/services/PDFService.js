@@ -73,50 +73,135 @@ class PDFService {
    */
   async processPDFForVectorDB(pdfBuffer) {
     try {
+      console.log('Starting PDF processing for vector database...');
+      
       // Parse PDF
       const pdfData = await pdfParse(pdfBuffer);
       const text = pdfData.text;
+      console.log(`Extracted ${text.length} characters from PDF`);
       
       // Split text into chunks (paragraphs)
       const chunks = this.splitTextIntoChunks(text);
+      console.log(`Split text into ${chunks.length} chunks`);
       
       // Skip if we already have vectors
       if (VectorSearchService.getVectorCount() > 0) {
-        console.log('Vector store already populated, skipping insertion');
+        console.log(`Vector store already populated with ${VectorSearchService.getVectorCount()} vectors, skipping insertion`);
         return true;
       }
       
-      if (chunks.length > 0) {
-        console.log(`Adding ${chunks.length} chunks to vector store...`);
+      if (chunks.length === 0) {
+        console.error('No chunks generated from PDF text');
+        return false;
+      }
+      
+      console.log(`Adding ${chunks.length} chunks to vector store...`);
+      
+      // Process chunks in smaller batches to avoid overwhelming the API
+      const batchSize = 3; // Further reduced batch size from 5 to 3
+      const totalBatches = Math.ceil(chunks.length / batchSize);
+      let successfulBatches = 0;
+      let failedBatches = 0;
+      
+      // Implement exponential backoff for retries
+      const maxRetries = 3;
+      const initialBackoff = 2000; // 2 seconds
+      
+      for (let i = 0; i < chunks.length; i += batchSize) {
+        const batch = chunks.slice(i, i + batchSize);
+        const currentBatch = Math.floor(i / batchSize) + 1;
         
-        // Process chunks in batches to avoid overwhelming the API
-        const batchSize = 10;
-        for (let i = 0; i < chunks.length; i += batchSize) {
-          const batch = chunks.slice(i, i + batchSize);
+        console.log(`Processing batch ${currentBatch}/${totalBatches} (${batch.length} chunks)...`);
+        
+        let retryCount = 0;
+        let success = false;
+        
+        while (!success && retryCount <= maxRetries) {
           try {
+            if (retryCount > 0) {
+              const backoffTime = initialBackoff * Math.pow(2, retryCount - 1);
+              console.log(`Retry ${retryCount}/${maxRetries} for batch ${currentBatch} after ${backoffTime}ms backoff...`);
+              await new Promise(resolve => setTimeout(resolve, backoffTime));
+            }
+            
             // Generate embeddings for this batch
             const embeddings = await VectorSearchService.generateEmbeddings(batch);
             
+            if (!embeddings || embeddings.length === 0) {
+              console.error(`No embeddings generated for batch ${currentBatch}`);
+              throw new Error('Empty embeddings result');
+            }
+            
+            console.log(`Generated ${embeddings.length} embeddings for batch ${currentBatch}`);
+            
             // Store chunks with their embeddings
-            const vectors = batch.map((text, j) => ({
-              id: `chunk-${i + j}`,
-              text,
-              embedding: embeddings[j]
-            }));
+            const vectors = batch.map((text, j) => {
+              if (!embeddings[j]) {
+                console.warn(`Missing embedding for chunk ${j} in batch ${currentBatch}`);
+                return null;
+              }
+              
+              return {
+                id: `chunk-${i + j}`,
+                text,
+                embedding: embeddings[j]
+              };
+            }).filter(v => v !== null); // Filter out null entries
             
-            VectorSearchService.addVectors(vectors);
+            if (vectors.length > 0) {
+              VectorSearchService.addVectors(vectors);
+              console.log(`Added ${vectors.length} vectors from batch ${currentBatch}`);
+              success = true;
+              successfulBatches++;
+            } else {
+              console.warn(`No valid vectors to add from batch ${currentBatch}`);
+              throw new Error('No valid vectors generated');
+            }
             
-            console.log(`Processed batch ${i / batchSize + 1}/${Math.ceil(chunks.length / batchSize)}`);
           } catch (error) {
-            console.error(`Error processing batch ${i / batchSize + 1}:`, error);
-            // Continue with next batch
+            retryCount++;
+            console.error(`Error processing batch ${currentBatch} (attempt ${retryCount}/${maxRetries + 1}):`, error.message);
+            
+            if (error.response) {
+              console.error('Response status:', error.response.status);
+              console.error('Response data:', JSON.stringify(error.response.data));
+              
+              // Handle rate limiting specifically
+              if (error.response.status === 429) {
+                const retryAfter = error.response.headers['retry-after'] || 
+                                  error.response.headers['x-ratelimit-reset'] || 
+                                  30;
+                console.log(`Rate limited. Waiting ${retryAfter} seconds before retry...`);
+                await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+              }
+            }
+            
+            if (retryCount > maxRetries) {
+              console.error(`Max retries exceeded for batch ${currentBatch}. Moving to next batch.`);
+              failedBatches++;
+            }
           }
         }
+        
+        // Add a longer delay between batches to avoid rate limiting
+        // Even if the current batch was successful
+        console.log(`Waiting 2000ms before processing next batch...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
       }
       
-      return true;
+      const finalVectorCount = VectorSearchService.getVectorCount();
+      console.log(`PDF processing completed. Total vectors: ${finalVectorCount}`);
+      console.log(`Successful batches: ${successfulBatches}/${totalBatches}, Failed batches: ${failedBatches}/${totalBatches}`);
+      
+      // Consider the process successful if we have vectors, even if some batches failed
+      return finalVectorCount > 0;
     } catch (error) {
-      console.error('Error processing PDF for vector database:', error);
+      console.error('Error processing PDF for vector database:', error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response headers:', JSON.stringify(error.response.headers));
+        console.error('Response data:', JSON.stringify(error.response.data));
+      }
       return false;
     }
   }

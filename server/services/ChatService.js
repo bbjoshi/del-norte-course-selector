@@ -15,7 +15,8 @@ class ChatService {
    */
   async processQuery(conversationHistory, userQuery) {
     try {
-      if (!process.env.REACT_APP_OPENROUTER_API_KEY) {
+      const openRouterApiKey = process.env.REACT_APP_OPENROUTER_API_KEY;
+      if (!openRouterApiKey) {
         throw new Error('No API key configured for OpenRouter');
       }
 
@@ -96,7 +97,7 @@ class ChatService {
         {
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.REACT_APP_OPENROUTER_API_KEY}`,
+            'Authorization': `Bearer ${openRouterApiKey}`,
             'HTTP-Referer': 'https://del-norte-course-selector.vercel.app',
             'X-Title': 'Del Norte Course Selector'
           }
@@ -167,7 +168,8 @@ class ChatService {
    */
   async summarizeConversation(messages) {
     try {
-      if (!process.env.REACT_APP_OPENROUTER_API_KEY) {
+      const openRouterApiKey = process.env.REACT_APP_OPENROUTER_API_KEY;
+      if (!openRouterApiKey) {
         throw new Error('No API key configured for OpenRouter');
       }
 
@@ -186,7 +188,7 @@ class ChatService {
         {
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.REACT_APP_OPENROUTER_API_KEY}`,
+            'Authorization': `Bearer ${openRouterApiKey}`,
             'HTTP-Referer': 'https://del-norte-course-selector.vercel.app',
             'X-Title': 'Del Norte Course Selector'
           }
