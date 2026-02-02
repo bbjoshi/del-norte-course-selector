@@ -5,6 +5,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import Login from './components/auth/Login';
 import SignUp from './components/auth/SignUp';
 import Home from './components/Home';
+import AdminPanel from './components/admin/AdminPanel';
 import PrivateRoute from './components/auth/PrivateRoute';
 import theme from './theme';
 
@@ -21,6 +22,14 @@ function App() {
               element={
                 <PrivateRoute>
                   <Home />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                <PrivateRoute>
+                  <AdminPanel />
                 </PrivateRoute>
               }
             />

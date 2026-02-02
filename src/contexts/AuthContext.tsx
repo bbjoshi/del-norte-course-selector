@@ -7,9 +7,9 @@ import {
   onAuthStateChanged,
   GoogleAuthProvider,
   signInWithPopup
-} from 'firebase/auth';
+} from '@firebase/auth';
 import { auth, db } from '../config/firebase';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from '@firebase/firestore';
 
 interface AuthContextType {
   currentUser: User | null;

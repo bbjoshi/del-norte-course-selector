@@ -17,7 +17,7 @@ import ChatInterface from './chat/ChatInterface';
 import PDFViewer from './PDFViewer';
 
 const Home: React.FC = () => {
-  const { currentUser, logout } = useAuth();
+  const { currentUser, logout, isAdmin } = useAuth();
   const navigate = useNavigate();
   const bgGradient = useColorModeValue(
     'linear(to-r, brand.600, brand.700)',
@@ -54,6 +54,17 @@ const Home: React.FC = () => {
               <Text fontWeight="medium">
                 {currentUser?.email}
               </Text>
+              {isAdmin && (
+                <Button 
+                  onClick={() => navigate('/admin')} 
+                  colorScheme="whiteAlpha" 
+                  variant="solid"
+                  _hover={{ bg: 'whiteAlpha.300' }}
+                  size="sm"
+                >
+                  Admin Panel
+                </Button>
+              )}
               <Button 
                 onClick={handleLogout} 
                 colorScheme="whiteAlpha" 

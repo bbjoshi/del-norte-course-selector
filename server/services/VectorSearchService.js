@@ -518,6 +518,17 @@ class VectorSearchService {
     console.log(`Cleared embeddings cache (${cacheSize} entries)`);
     return cacheSize;
   }
+
+  /**
+   * Clear all vectors from the in-memory store
+   */
+  clearVectors() {
+    const vectorCount = this.inMemoryVectors.length;
+    this.inMemoryVectors = [];
+    this.vectorSearchAvailable = false;
+    console.log(`Cleared ${vectorCount} vectors from in-memory store`);
+    return vectorCount;
+  }
 }
 
 // Export as singleton

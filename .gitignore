@@ -46,3 +46,7 @@ desktop.ini
 
 # Render
 .render-buildpacks/
+
+# Uploaded files
+/uploads
+current-catalog.pdf

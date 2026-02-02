@@ -17,7 +17,7 @@ import {
   useToast,
   VStack,
 } from '@chakra-ui/react';
-import { FirebaseError } from 'firebase/app';
+import { FirebaseError } from '@firebase/app';
 import { EmailIcon, LockIcon } from '@chakra-ui/icons';
 
 const Login: React.FC = () => {
