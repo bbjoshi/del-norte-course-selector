@@ -1,9 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
-const path = require('path');
-const fs = require('fs');
-const pdfParse = require('pdf-parse');
+const path = require('path');const fs = require('fs');
+const { PDFParse: pdfParse } = require('pdf-parse');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const app = express();
@@ -40,52 +39,51 @@ async function processPDFForVectorDB(pdfBuffer) {
     embeddingsGenerationError = null;
     embeddingsGenerationProgress = 0;
     
-    // Create a progress tracking function to pass to PDFService
-    const updateProgress = (progress) => {
-      embeddingsGenerationProgress = Math.min(Math.round(progress), 100);
-      console.log(`Embeddings generation progress updated: ${embeddingsGenerationProgress}%`);
-    };
+    console.log('Starting PDF processing for embeddings generation...');
     
     // Extract text from PDF to get total chunks for progress calculation
-    const pdfData = await pdfParse(pdfBuffer);
+    const parser = new pdfParse({ data: Buffer.from(pdfBuffer) });
+    const pdfData = await parser.getText();
     const text = pdfData.text;
     const chunks = PDFService.splitTextIntoChunks(text);
     const totalChunks = chunks.length;
     
-    // Set up progress monitoring
+    console.log(`Starting embeddings generation for ${totalChunks} chunks...`);
+    
+    // Set up progress monitoring by wrapping addVectors
     let processedChunks = 0;
     const originalAddVectors = VectorSearchService.addVectors.bind(VectorSearchService);
     
-    // Override addVectors temporarily to track progress
+    // Override addVectors to track progress
     VectorSearchService.addVectors = (vectors) => {
       const result = originalAddVectors(vectors);
       processedChunks += vectors.length;
-      const progress = (processedChunks / totalChunks) * 100;
-      updateProgress(progress);
+      embeddingsGenerationProgress = Math.min(Math.round((processedChunks / totalChunks) * 100), 100);
+      console.log(`Embeddings generation progress: ${embeddingsGenerationProgress}% (${processedChunks}/${totalChunks} chunks)`);
       return result;
     };
     
-    console.log(`Starting embeddings generation for ${totalChunks} chunks...`);
-    
-    // Use PDFService to process the PDF
-    const success = await PDFService.processPDFForVectorDB(pdfBuffer);
-    
-    // Restore original function
-    VectorSearchService.addVectors = originalAddVectors;
-    
-    // Update flags based on result
-    embeddingsGenerationComplete = true;
-    embeddingsGenerationInProgress = false;
-    embeddingsGenerationProgress = 100;
-    
-    if (!success) {
-      embeddingsGenerationError = "PDF processing completed but no vectors were generated";
-      console.error(embeddingsGenerationError);
-    } else {
-      console.log(`Successfully generated embeddings for ${VectorSearchService.getVectorCount()} chunks`);
+    try {
+      // Use PDFService to process the PDF
+      const success = await PDFService.processPDFForVectorDB(pdfBuffer);
+      
+      // Update flags based on result
+      embeddingsGenerationComplete = true;
+      embeddingsGenerationInProgress = false;
+      embeddingsGenerationProgress = 100;
+      
+      if (!success) {
+        embeddingsGenerationError = "PDF processing completed but no vectors were generated";
+        console.error(embeddingsGenerationError);
+      } else {
+        console.log(`Successfully generated embeddings for ${VectorSearchService.getVectorCount()} chunks`);
+      }
+      
+      return success;
+    } finally {
+      // Always restore original function
+      VectorSearchService.addVectors = originalAddVectors;
     }
-    
-    return success;
   } catch (error) {
     console.error('Error processing PDF for vector database:', error.message);
     if (error.stack) {
@@ -126,6 +124,10 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Serve static files from the React build
 app.use(express.static(path.join(__dirname, '..', 'build')));
+
+// Import and use admin routes
+const adminRoutes = require('./routes/admin');
+app.use('/api/admin', adminRoutes);
 
 
 // PDF proxy endpoint
@@ -469,7 +471,7 @@ app.post('/api/chat', async (req, res) => {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'anthropic/claude-3-opus:20240229',
+        model: 'anthropic/claude-3.5-sonnet',
         messages: messages,
         max_tokens: 4000
       },
@@ -650,10 +652,11 @@ app.get('/debug/pdf-status', (req, res) => {
   });
 });
 
-// Serve React app for all other routes
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'build', 'index.html'));
-});
+// Serve React app for all other routes (commented out for development with Vite)
+// In production, uncomment this to serve the built React app
+// app.get('*', (req, res) => {
+//   res.sendFile(path.join(__dirname, '..', 'build', 'index.html'));
+// });
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
