@@ -31,15 +31,21 @@ let courseStructure = {
 };
 
 // Function to process PDF and add to vector store
-async function processPDFForVectorDB(pdfBuffer) {
+async function processPDFForVectorDB(pdfBuffer, documentType = 'catalog') {
   try {
+    // Don't reprocess if already complete
+    if (embeddingsGenerationComplete && !embeddingsGenerationError) {
+      console.log(`Embeddings already generated. Skipping reprocessing.`);
+      return true;
+    }
+    
     // Set flags to indicate processing has started
     embeddingsGenerationInProgress = true;
     embeddingsGenerationComplete = false;
     embeddingsGenerationError = null;
     embeddingsGenerationProgress = 0;
     
-    console.log('Starting PDF processing for embeddings generation...');
+    console.log(`Starting ${documentType} processing for embeddings generation...`);
     
     // Extract text from PDF to get total chunks for progress calculation
     const parser = new pdfParse({ data: Buffer.from(pdfBuffer) });
@@ -48,7 +54,7 @@ async function processPDFForVectorDB(pdfBuffer) {
     const chunks = PDFService.splitTextIntoChunks(text);
     const totalChunks = chunks.length;
     
-    console.log(`Starting embeddings generation for ${totalChunks} chunks...`);
+    console.log(`Starting embeddings generation for ${totalChunks} ${documentType} chunks...`);
     
     // Set up progress monitoring by wrapping addVectors
     let processedChunks = 0;
@@ -65,7 +71,7 @@ async function processPDFForVectorDB(pdfBuffer) {
     
     try {
       // Use PDFService to process the PDF
-      const success = await PDFService.processPDFForVectorDB(pdfBuffer);
+      const success = await PDFService.processPDFForVectorDB(pdfBuffer, documentType);
       
       // Update flags based on result
       embeddingsGenerationComplete = true;
@@ -423,29 +429,36 @@ app.post('/api/chat', async (req, res) => {
     const systemMessage = {
       role: 'system',
       content: `
-        You are a helpful course recommendation assistant for Del Norte High School. Your purpose is to suggest appropriate courses from the school's catalog based on student queries, whether about specific subjects, college majors, or career paths.
+        You are a helpful course recommendation and student guidance assistant for Del Norte High School. You have access to both the Course Catalog and the Student Handbook to provide comprehensive information about courses, school policies, graduation requirements, and student life.
 
         When responding to queries:
 
         1. Determine the query type:
-           - If asking about specific subjects (e.g., "Tell me about AP Chemistry"), provide detailed information about just that course.
-           - If asking about a subject area (e.g., "What math courses are available?"), list all relevant courses in that category with brief descriptions.
-           - If asking about college majors or careers, map these to relevant high school subject areas (A-Social Science, B-English, C-Mathematics, D-Sciences, E-World Languages, F-Fine Arts, G-Electives).
-           - Only generate a comprehensive 4-year plan when explicitly requested (e.g., "Create a 4-year plan for a student interested in engineering").
+           - Course-specific questions: Provide detailed information from the Course Catalog
+           - Policy/procedure questions: Reference the Student Handbook for rules, policies, and procedures
+           - Graduation requirements: Use both documents to explain requirements and course options
+           - 4-year planning: Combine catalog course information with handbook graduation requirements
+           - School life/activities: Reference the Student Handbook for clubs, sports, and student activities
 
-        2. For subject-specific questions:
+        2. For course-specific questions:
            - Provide accurate, detailed information from the catalog about the requested course(s)
            - Include course codes, prerequisites, grade eligibility, and UC/CSU requirement fulfillment
            - Highlight key aspects of the course content and any special requirements
 
-        3. For 4-year plan requests (only when explicitly asked):
+        3. For policy and procedure questions:
+           - Reference the Student Handbook for attendance policies, grading, discipline, etc.
+           - Provide clear, accurate information about school rules and expectations
+           - Include relevant page numbers or section references when available
+
+        4. For 4-year plan requests (only when explicitly asked):
            - Organize recommendations by grade level (9-12) with clear headings for each year
            - Suggest 6-8 courses per year that follow logical progression paths
            - Carefully follow prerequisite requirements mentioned in the catalog
-           - Ensure all graduation requirements are met while incorporating interest-specific courses
+           - Ensure all graduation requirements from the handbook are met
            - Balance course load difficulty appropriately for each grade level
+           - Consider UC/CSU A-G requirements if college-bound
 
-        4. When recommending courses for any purpose:
+        5. When recommending courses:
            - Analyze course sequences and prerequisites to suggest logical progression paths
            - Highlight advanced placement, honors, and specialized courses that align with expressed interests
            - For interests spanning multiple disciplines, include courses from all relevant subject areas
@@ -453,14 +466,19 @@ app.post('/api/chat', async (req, res) => {
            - Avoid suggesting courses that do not exist in the catalog
            - Present course codes in the format (123456) and include page numbers for reference
 
-        5. Be conversational and helpful, asking follow-up questions when necessary to better understand the student's specific needs.
+        6. Be conversational and helpful:
+           - Ask follow-up questions when necessary to better understand the student's specific needs
+           - Provide context from both the Course Catalog and Student Handbook when relevant
+           - Help students understand how courses fit into their overall academic journey
 
-        Remember that this catalog is organized by subject areas rather than majors. Avoid inventing courses that don't exist in the catalog, and verify all course codes and details before providing information or recommendations.
-        
-        Course Catalog Information:
+        Available Reference Information:
         ${relevantInfo}
         
-        IMPORTANT: Maintain context from the conversation history. Reference previous questions and your previous answers when appropriate to provide continuity.
+        IMPORTANT: 
+        - Maintain context from the conversation history
+        - Reference previous questions and answers when appropriate to provide continuity
+        - When information comes from the Student Handbook vs Course Catalog, you can mention the source if helpful
+        - If you're unsure about something, acknowledge it rather than making up information
       `
     };
 
@@ -618,6 +636,30 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Health check endpoint (API version for frontend)
+app.get('/api/health', (req, res) => {
+  const packageJson = require('../package.json');
+  const pdfContent = PDFService.getPDFContent();
+  const courseStructure = PDFService.getCourseStructure();
+  
+  res.json({ 
+    status: 'ok',
+    version: packageJson.version,
+    hasPdfContent: !!pdfContent,
+    hasVectorSearch: VectorSearchService.isAvailable(),
+    vectorCount: VectorSearchService.getVectorCount(),
+    contentLength: pdfContent ? pdfContent.length : 0,
+    courseCounts: {
+      math: courseStructure.math.length,
+      science: courseStructure.science.length,
+      english: courseStructure.english.length,
+      languages: courseStructure.languages.length,
+      engineering: courseStructure.engineering.length,
+      electives: courseStructure.electives.length
+    }
+  });
+});
+
 // Debug endpoint to check PDF processing status
 app.get('/debug/pdf-status', (req, res) => {
   const pdfContent = PDFService.getPDFContent();
@@ -658,11 +700,112 @@ app.get('/debug/pdf-status', (req, res) => {
 //   res.sendFile(path.join(__dirname, '..', 'build', 'index.html'));
 // });
 
-app.listen(port, () => {
+// Initialize vector database on startup
+async function initializeVectorDatabase() {
+  try {
+    console.log('Checking vector database initialization...');
+    
+    // Check if we already have vectors loaded
+    const vectorCount = VectorSearchService.getVectorCount();
+    if (vectorCount > 0) {
+      console.log(`Vector database already initialized with ${vectorCount} vectors`);
+      return;
+    }
+    
+    console.log('Vector database is empty. Checking for default PDFs...');
+    
+    const documentsToProcess = [];
+    
+    // Check for Course Catalog
+    const catalogPath = path.join(__dirname, '..', 'current-catalog.pdf');
+    if (fs.existsSync(catalogPath)) {
+      console.log('Found current-catalog.pdf');
+      documentsToProcess.push({
+        path: catalogPath,
+        type: 'catalog',
+        name: 'Course Catalog'
+      });
+    } else {
+      const defaultCatalogPath = path.join(__dirname, '..', 'Del Norte Course Catalog 2025-2026.pdf');
+      if (fs.existsSync(defaultCatalogPath)) {
+        console.log('Found default Course Catalog PDF');
+        documentsToProcess.push({
+          path: defaultCatalogPath,
+          type: 'catalog',
+          name: 'Course Catalog'
+        });
+        // Copy it to current-catalog.pdf for future use
+        fs.copyFileSync(defaultCatalogPath, catalogPath);
+        console.log('Copied default catalog to current-catalog.pdf');
+      }
+    }
+    
+    // Check for Student Handbook
+    const handbookPath = path.join(__dirname, '..', 'DNHS Student Handbook last revised 8_2025.pdf');
+    if (fs.existsSync(handbookPath)) {
+      console.log('Found Student Handbook PDF');
+      documentsToProcess.push({
+        path: handbookPath,
+        type: 'handbook',
+        name: 'Student Handbook'
+      });
+    }
+    
+    if (documentsToProcess.length === 0) {
+      console.log('No default PDFs found. Vector database will remain empty until admin uploads documents.');
+      return;
+    }
+    
+    console.log(`Found ${documentsToProcess.length} document(s) to process`);
+    
+    // Process each document
+    for (const doc of documentsToProcess) {
+      try {
+        console.log(`\n=== Processing ${doc.name} ===`);
+        const pdfBuffer = fs.readFileSync(doc.path);
+        const success = await processPDFForVectorDB(pdfBuffer, doc.type);
+        
+        if (success) {
+          console.log(`✓ ${doc.name} processed successfully`);
+        } else {
+          console.warn(`✗ Failed to process ${doc.name}`);
+        }
+        
+        // Add delay between documents to avoid rate limiting
+        if (documentsToProcess.indexOf(doc) < documentsToProcess.length - 1) {
+          console.log('Waiting 3 seconds before processing next document...');
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+      } catch (error) {
+        console.error(`Error processing ${doc.name}:`, error.message);
+        // Continue with next document even if one fails
+      }
+    }
+    
+    const finalVectorCount = VectorSearchService.getVectorCount();
+    console.log(`\n=== Vector Database Initialization Complete ===`);
+    console.log(`Total vectors: ${finalVectorCount}`);
+    console.log(`Documents processed: ${documentsToProcess.map(d => d.name).join(', ')}`);
+    
+  } catch (error) {
+    console.error('Error initializing vector database:', error.message);
+    // Don't crash the server if initialization fails
+  }
+}
+
+app.listen(port, async () => {
   console.log(`Server running on port ${port}`);
   console.log('Environment:', {
     nodeEnv: process.env.NODE_ENV,
     port,
     hasApiKey: !!process.env.REACT_APP_OPENROUTER_API_KEY
+  });
+  
+  // Initialize vector database in the background
+  console.log('Starting vector database initialization...');
+  initializeVectorDatabase().then(() => {
+    console.log('Vector database initialization complete');
+  }).catch(error => {
+    console.error('Vector database initialization failed:', error.message);
   });
 });

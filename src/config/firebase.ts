@@ -1,6 +1,6 @@
 import { initializeApp } from '@firebase/app';
 import { getAuth, Auth } from '@firebase/auth';
-import { getFirestore, connectFirestoreEmulator, Firestore } from '@firebase/firestore';
+import { getFirestore, connectFirestoreEmulator, Firestore, initializeFirestore, memoryLocalCache, FirestoreSettings } from '@firebase/firestore';
 
 // Use environment variables for Firebase configuration
 // Vite uses import.meta.env instead of process.env
@@ -42,11 +42,10 @@ try {
 
   // Initialize Firestore with error handling
   try {
-    db = getFirestore(app);
-    console.log("Firestore initialized successfully");
-
     // Connect to Firestore emulator if enabled
     if (import.meta.env.VITE_USE_FIREBASE_EMULATOR === 'true') {
+      db = getFirestore(app);
+      console.log("Firestore initialized successfully");
       try {
         console.log("Connecting to Firestore emulator");
         if (db) {
@@ -56,6 +55,11 @@ try {
       } catch (emulatorError) {
         console.error("Failed to connect to Firestore emulator:", emulatorError);
       }
+    } else {
+      // Initialize Firestore for production with memory-only cache
+      // Use the named database: del-norte-course-selector-firestore-db
+      db = getFirestore(app, 'del-norte-course-selector-firestore-db');
+      console.log("Firestore initialized successfully (database: del-norte-course-selector-firestore-db)");
     }
   } catch (firestoreError) {
     console.error("Failed to initialize Firestore:", firestoreError);
