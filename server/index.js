@@ -387,7 +387,7 @@ app.post('/api/chat', async (req, res) => {
     
     // If no relevant info was provided, search for it
     if (!relevantInfo) {
-      // Search vector database for relevant content
+      // Search ALL vectors for relevant content (retrieve from all documents)
       const vectorResults = await VectorSearchService.search(userQuery, 5);
       console.log(`Found ${vectorResults.length} results from vector search`);
       
@@ -424,6 +424,34 @@ app.post('/api/chat', async (req, res) => {
         }
       }
     }
+    
+    // Always prepend a document inventory so the AI knows what sources are loaded
+    const vectorCount = VectorSearchService.getVectorCount();
+    const loadedDocuments = [];
+    
+    // Check which documents are loaded by scanning vectors
+    const allVectors = VectorSearchService.getAllVectorTexts ? VectorSearchService.getAllVectorTexts() : [];
+    
+    // Build document inventory from what was loaded at startup
+    const referencesDir = path.join(__dirname, '..', 'references');
+    if (fs.existsSync(referencesDir)) {
+      const refFiles = fs.readdirSync(referencesDir).filter(f => f.toLowerCase().endsWith('.pdf'));
+      refFiles.forEach(f => loadedDocuments.push(f.replace('.pdf', '').replace(/_/g, ' ')));
+    }
+    const catalogPath = path.join(__dirname, '..', 'current-catalog.pdf');
+    if (fs.existsSync(catalogPath)) {
+      loadedDocuments.unshift('Course Catalog (current-catalog.pdf)');
+    }
+    
+    const documentInventory = `
+=== LOADED SOURCE DOCUMENTS ===
+The following documents have been loaded and vectorized for reference (${vectorCount} total vectors):
+${loadedDocuments.map((d, i) => `${i + 1}. ${d}`).join('\n')}
+
+All of these documents are available and searchable. The specific excerpts shown below were retrieved as most relevant to the current query, but you have knowledge from ALL loaded documents.
+`;
+    
+    relevantInfo = documentInventory + '\n' + relevantInfo;
 
     // Prepare the system message with instructions and relevant info
     const systemMessage = {
