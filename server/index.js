@@ -634,6 +634,63 @@ app.get('/api/vector-search', async (req, res) => {
   }
 });
 
+// Feedback storage endpoint
+app.post('/api/feedback', (req, res) => {
+  try {
+    const { messageId, query, response: botResponse, rating, comment, timestamp } = req.body;
+    
+    if (!messageId || !rating) {
+      return res.status(400).json({ error: 'messageId and rating are required' });
+    }
+    
+    const feedbackEntry = {
+      messageId,
+      query: query || '',
+      response: botResponse || '',
+      rating, // 'positive' or 'negative'
+      comment: comment || '',
+      timestamp: timestamp || new Date().toISOString(),
+    };
+    
+    // Append feedback to a JSON file
+    const feedbackPath = path.join(__dirname, '..', 'feedback.json');
+    let feedbackData = [];
+    
+    if (fs.existsSync(feedbackPath)) {
+      try {
+        feedbackData = JSON.parse(fs.readFileSync(feedbackPath, 'utf8'));
+      } catch (e) {
+        feedbackData = [];
+      }
+    }
+    
+    feedbackData.push(feedbackEntry);
+    fs.writeFileSync(feedbackPath, JSON.stringify(feedbackData, null, 2));
+    
+    console.log(`Feedback received: ${rating} for message ${messageId}${comment ? ` - "${comment}"` : ''}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error storing feedback:', error);
+    res.status(500).json({ error: 'Failed to store feedback' });
+  }
+});
+
+// Get all feedback (for admin)
+app.get('/api/feedback', (req, res) => {
+  try {
+    const feedbackPath = path.join(__dirname, '..', 'feedback.json');
+    if (fs.existsSync(feedbackPath)) {
+      const feedbackData = JSON.parse(fs.readFileSync(feedbackPath, 'utf8'));
+      res.json({ feedback: feedbackData, total: feedbackData.length });
+    } else {
+      res.json({ feedback: [], total: 0 });
+    }
+  } catch (error) {
+    console.error('Error reading feedback:', error);
+    res.status(500).json({ error: 'Failed to read feedback' });
+  }
+});
+
 // Embeddings status endpoint
 app.get('/api/embeddings-status', (req, res) => {
   res.json({

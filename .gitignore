@@ -50,3 +50,6 @@ desktop.ini
 # Uploaded files
 /uploads
 current-catalog.pdf
+
+# Feedback data
+feedback.json

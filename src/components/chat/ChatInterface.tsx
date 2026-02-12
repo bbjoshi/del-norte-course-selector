@@ -14,6 +14,11 @@ import {
   Spinner,
   Center,
   Progress,
+  IconButton,
+  Textarea,
+  HStack,
+  Collapse,
+  Tooltip,
 } from '@chakra-ui/react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
@@ -21,11 +26,20 @@ import './ChatInterface.css';
 import { PDFService } from '../../services/PDFService';
 import { ChatService } from '../../services/ChatService';
 
+interface FeedbackState {
+  rating: 'positive' | 'negative' | null;
+  comment: string;
+  submitted: boolean;
+  showCommentBox: boolean;
+}
+
 interface Message {
   id: string;
   text: string;
   sender: 'user' | 'bot';
   timestamp: Date;
+  queryText?: string; // Store the user query that prompted this bot response
+  feedback?: FeedbackState;
 }
 
 const ChatInterface: React.FC = () => {
@@ -49,6 +63,7 @@ const ChatInterface: React.FC = () => {
   const botBubbleBg = useColorModeValue('white', 'gray.700');
   const botBubbleBorder = useColorModeValue('gray.200', 'gray.600');
   const chatBg = useColorModeValue('gray.50', 'gray.800');
+  const feedbackBg = useColorModeValue('gray.50', 'gray.600');
 
   // Initialize services
   const [pdfService] = useState(() => PDFService.getInstance());
@@ -72,6 +87,92 @@ const ChatInterface: React.FC = () => {
     } catch (error) {
       console.error('Error checking embeddings status:', error);
       return false;
+    }
+  };
+
+  // Handle feedback rating (thumbs up/down)
+  const handleFeedbackRating = async (messageId: string, rating: 'positive' | 'negative') => {
+    setMessages(prev => prev.map(msg => {
+      if (msg.id === messageId) {
+        const currentFeedback = msg.feedback || { rating: null, comment: '', submitted: false, showCommentBox: false };
+        const isSameRating = currentFeedback.rating === rating;
+        
+        return {
+          ...msg,
+          feedback: {
+            ...currentFeedback,
+            rating: isSameRating ? null : rating,
+            showCommentBox: !isSameRating, // Show comment box when selecting a rating
+            submitted: false,
+          }
+        };
+      }
+      return msg;
+    }));
+  };
+
+  // Handle feedback comment change
+  const handleFeedbackComment = (messageId: string, comment: string) => {
+    setMessages(prev => prev.map(msg => {
+      if (msg.id === messageId && msg.feedback) {
+        return {
+          ...msg,
+          feedback: {
+            ...msg.feedback,
+            comment,
+          }
+        };
+      }
+      return msg;
+    }));
+  };
+
+  // Submit feedback to the server
+  const submitFeedback = async (messageId: string) => {
+    const message = messages.find(m => m.id === messageId);
+    if (!message || !message.feedback || !message.feedback.rating) return;
+
+    try {
+      await axios.post('/api/feedback', {
+        messageId: message.id,
+        query: message.queryText || '',
+        response: message.text,
+        rating: message.feedback.rating,
+        comment: message.feedback.comment,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Mark as submitted
+      setMessages(prev => prev.map(msg => {
+        if (msg.id === messageId && msg.feedback) {
+          return {
+            ...msg,
+            feedback: {
+              ...msg.feedback,
+              submitted: true,
+              showCommentBox: false,
+            }
+          };
+        }
+        return msg;
+      }));
+
+      toast({
+        title: 'Thank you!',
+        description: 'Your feedback has been recorded.',
+        status: 'success',
+        duration: 2000,
+        isClosable: true,
+      });
+    } catch (error) {
+      console.error('Error submitting feedback:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to submit feedback. Please try again.',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
     }
   };
 
@@ -139,9 +240,11 @@ const ChatInterface: React.FC = () => {
     
     if (!inputMessage.trim() || !isInitialized) return;
 
+    const userQueryText = inputMessage.trim();
+    
     const userMessage: Message = {
       id: Date.now().toString(),
-      text: inputMessage.trim(),
+      text: userQueryText,
       sender: 'user',
       timestamp: new Date(),
     };
@@ -158,6 +261,13 @@ const ChatInterface: React.FC = () => {
         text: response,
         sender: 'bot',
         timestamp: new Date(),
+        queryText: userQueryText,
+        feedback: {
+          rating: null,
+          comment: '',
+          submitted: false,
+          showCommentBox: false,
+        },
       };
 
       setMessages(prev => [...prev, botMessage]);
@@ -172,6 +282,118 @@ const ChatInterface: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Feedback component for bot messages
+  const FeedbackSection: React.FC<{ message: Message }> = ({ message }) => {
+    if (!message.feedback) return null;
+    const { rating, comment, submitted, showCommentBox } = message.feedback;
+
+    return (
+      <Box mt={2} pt={2} borderTopWidth={1} borderColor={botBubbleBorder}>
+        <HStack spacing={1} justify="flex-start" align="center">
+          <Text fontSize="xs" color="gray.500" mr={1}>
+            {submitted ? 'Thanks for your feedback!' : 'Was this helpful?'}
+          </Text>
+          
+          {!submitted && (
+            <>
+              <Tooltip label="Helpful" placement="top" hasArrow>
+                <IconButton
+                  aria-label="Thumbs up"
+                  icon={<span style={{ fontSize: '16px' }}>{rating === 'positive' ? '👍' : '👍🏻'}</span>}
+                  size="xs"
+                  variant={rating === 'positive' ? 'solid' : 'ghost'}
+                  colorScheme={rating === 'positive' ? 'green' : 'gray'}
+                  onClick={() => handleFeedbackRating(message.id, 'positive')}
+                  borderRadius="full"
+                />
+              </Tooltip>
+              <Tooltip label="Not helpful" placement="top" hasArrow>
+                <IconButton
+                  aria-label="Thumbs down"
+                  icon={<span style={{ fontSize: '16px' }}>{rating === 'negative' ? '👎' : '👎🏻'}</span>}
+                  size="xs"
+                  variant={rating === 'negative' ? 'solid' : 'ghost'}
+                  colorScheme={rating === 'negative' ? 'red' : 'gray'}
+                  onClick={() => handleFeedbackRating(message.id, 'negative')}
+                  borderRadius="full"
+                />
+              </Tooltip>
+            </>
+          )}
+          
+          {submitted && (
+            <Text fontSize="xs" color={rating === 'positive' ? 'green.500' : 'red.500'}>
+              {rating === 'positive' ? '👍' : '👎'}
+            </Text>
+          )}
+        </HStack>
+
+        <Collapse in={showCommentBox && !submitted} animateOpacity>
+          <Box mt={2} p={2} bg={feedbackBg} borderRadius="md">
+            <Text fontSize="xs" color="gray.600" mb={1}>
+              {rating === 'negative'
+                ? 'What was wrong or could be improved?'
+                : 'What did you find helpful? (optional)'}
+            </Text>
+            <Textarea
+              size="sm"
+              fontSize="sm"
+              placeholder={
+                rating === 'negative'
+                  ? 'e.g., The information was incorrect, missing details...'
+                  : 'e.g., The course recommendations were spot on...'
+              }
+              value={comment}
+              onChange={(e) => handleFeedbackComment(message.id, e.target.value)}
+              rows={2}
+              resize="none"
+              bg="white"
+              borderColor="gray.300"
+              _focus={{ borderColor: 'brand.500' }}
+            />
+            <HStack mt={2} justify="flex-end" spacing={2}>
+              <Button
+                size="xs"
+                variant="ghost"
+                onClick={() => {
+                  setMessages(prev => prev.map(msg => {
+                    if (msg.id === message.id && msg.feedback) {
+                      return {
+                        ...msg,
+                        feedback: {
+                          ...msg.feedback,
+                          showCommentBox: false,
+                          rating: null,
+                          comment: '',
+                        }
+                      };
+                    }
+                    return msg;
+                  }));
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="xs"
+                colorScheme="brand"
+                onClick={() => submitFeedback(message.id)}
+              >
+                Submit
+              </Button>
+            </HStack>
+          </Box>
+        </Collapse>
+
+        {submitted && comment && (
+          <Text fontSize="xs" color="gray.400" mt={1} fontStyle="italic">
+            "{comment}"
+          </Text>
+        )}
+      </Box>
+    );
   };
 
   return (
@@ -263,6 +485,11 @@ const ChatInterface: React.FC = () => {
                 >
                   {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </Text>
+                
+                {/* Feedback section for bot messages (not for welcome message) */}
+                {message.sender === 'bot' && message.id !== 'welcome' && (
+                  <FeedbackSection message={message} />
+                )}
               </Box>
             </Flex>
           ))}
