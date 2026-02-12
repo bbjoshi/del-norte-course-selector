@@ -9,23 +9,19 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 3002
       - key: NODE_OPTIONS
         value: "--max-old-space-size=512"
-      - key: REACT_APP_FIREBASE_API_KEY
+      - key: VITE_FIREBASE_API_KEY
         sync: false
-      - key: REACT_APP_FIREBASE_AUTH_DOMAIN
+      - key: VITE_FIREBASE_AUTH_DOMAIN
         sync: false
-      - key: REACT_APP_FIREBASE_PROJECT_ID
+      - key: VITE_FIREBASE_PROJECT_ID
         sync: false
-      - key: REACT_APP_FIREBASE_STORAGE_BUCKET
+      - key: VITE_FIREBASE_STORAGE_BUCKET
         sync: false
-      - key: REACT_APP_FIREBASE_MESSAGING_SENDER_ID
+      - key: VITE_FIREBASE_MESSAGING_SENDER_ID
         sync: false
-      - key: REACT_APP_FIREBASE_APP_ID
-        sync: false
-      - key: REACT_APP_FIREBASE_FIRESTORE_DB
+      - key: VITE_FIREBASE_APP_ID
         sync: false
       - key: REACT_APP_OPENROUTER_API_KEY
         sync: false

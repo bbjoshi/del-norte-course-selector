@@ -841,11 +841,10 @@ app.get('/debug/pdf-status', (req, res) => {
   });
 });
 
-// Serve React app for all other routes (commented out for development with Vite)
-// In production, uncomment this to serve the built React app
-// app.get('*', (req, res) => {
-//   res.sendFile(path.join(__dirname, '..', 'build', 'index.html'));
-// });
+// Serve React app for all other routes (SPA catch-all)
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'build', 'index.html'));
+});
 
 // Initialize vector database on startup
 async function initializeVectorDatabase() {
