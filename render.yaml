@@ -11,6 +11,8 @@ services:
         value: production
       - key: NODE_OPTIONS
         value: "--max-old-space-size=512"
+      - key: NPM_CONFIG_LEGACY_PEER_DEPS
+        value: "true"
       - key: VITE_FIREBASE_API_KEY
         sync: false
       - key: VITE_FIREBASE_AUTH_DOMAIN
