@@ -26,7 +26,7 @@ export default defineConfig({
   },
   build: {
     outDir: 'build',
-    sourcemap: true,
+    sourcemap: false,
     commonjsOptions: {
       include: [/node_modules/],
       exclude: [/firebase/],
