@@ -154,14 +154,14 @@ class DatabaseService {
 
   createSession(id, title) {
     this.db.prepare(
-      'INSERT OR REPLACE INTO chat_sessions (id, title, created_at, updated_at) VALUES (?, ?, datetime("now"), datetime("now"))'
+      `INSERT OR REPLACE INTO chat_sessions (id, title, created_at, updated_at) VALUES (?, ?, datetime('now'), datetime('now'))`
     ).run(id, title);
     return id;
   }
 
   updateSessionTitle(id, title) {
     this.db.prepare(
-      'UPDATE chat_sessions SET title = ?, updated_at = datetime("now") WHERE id = ?'
+      `UPDATE chat_sessions SET title = ?, updated_at = datetime('now') WHERE id = ?`
     ).run(title, id);
   }
 
@@ -209,7 +209,7 @@ class DatabaseService {
       }
     }
     
-    this.db.prepare('UPDATE chat_sessions SET updated_at = datetime("now") WHERE id = ?').run(sessionId);
+    this.db.prepare(`UPDATE chat_sessions SET updated_at = datetime('now') WHERE id = ?`).run(sessionId);
   }
 
   getMessages(sessionId) {
