@@ -31,10 +31,10 @@ let courseStructure = {
 };
 
 // Function to process PDF and add to vector store
-async function processPDFForVectorDB(pdfBuffer, documentType = 'catalog') {
+async function processPDFForVectorDB(pdfBuffer, documentType = 'catalog', forceReprocess = false) {
   try {
-    // Don't reprocess if already complete
-    if (embeddingsGenerationComplete && !embeddingsGenerationError) {
+    // Don't reprocess if already complete (unless forced, e.g. during multi-document init)
+    if (!forceReprocess && embeddingsGenerationComplete && !embeddingsGenerationError) {
       console.log(`Embeddings already generated. Skipping reprocessing.`);
       return true;
     }
@@ -751,6 +751,35 @@ async function initializeVectorDatabase() {
       });
     }
     
+    // Check for PDFs in the references folder
+    const referencesDir = path.join(__dirname, '..', 'references');
+    if (fs.existsSync(referencesDir)) {
+      console.log('Found references directory, scanning for PDFs...');
+      const referenceFiles = fs.readdirSync(referencesDir).filter(f => f.toLowerCase().endsWith('.pdf'));
+      for (const file of referenceFiles) {
+        const filePath = path.join(referencesDir, file);
+        // Avoid duplicates - check if we already have a document with same filename
+        const alreadyAdded = documentsToProcess.some(d => path.basename(d.path) === file);
+        if (!alreadyAdded) {
+          // Determine type based on filename
+          let docType = 'reference';
+          if (file.toLowerCase().includes('handbook')) {
+            docType = 'handbook';
+          } else if (file.toLowerCase().includes('graduation')) {
+            docType = 'graduation_requirements';
+          } else if (file.toLowerCase().includes('catalog')) {
+            docType = 'catalog';
+          }
+          console.log(`Found reference PDF: ${file} (type: ${docType})`);
+          documentsToProcess.push({
+            path: filePath,
+            type: docType,
+            name: file.replace('.pdf', '').replace(/_/g, ' ')
+          });
+        }
+      }
+    }
+    
     if (documentsToProcess.length === 0) {
       console.log('No default PDFs found. Vector database will remain empty until admin uploads documents.');
       return;
@@ -763,7 +792,7 @@ async function initializeVectorDatabase() {
       try {
         console.log(`\n=== Processing ${doc.name} ===`);
         const pdfBuffer = fs.readFileSync(doc.path);
-        const success = await processPDFForVectorDB(pdfBuffer, doc.type);
+        const success = await processPDFForVectorDB(pdfBuffer, doc.type, true);
         
         if (success) {
           console.log(`✓ ${doc.name} processed successfully`);

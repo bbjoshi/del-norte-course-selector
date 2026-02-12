@@ -85,12 +85,6 @@ class PDFService {
       const chunks = this.splitTextIntoChunks(text);
       console.log(`Split text into ${chunks.length} chunks`);
       
-      // Skip if we already have vectors
-      if (VectorSearchService.getVectorCount() > 0) {
-        console.log(`Vector store already populated with ${VectorSearchService.getVectorCount()} vectors, skipping insertion`);
-        return true;
-      }
-      
       if (chunks.length === 0) {
         console.error('No chunks generated from PDF text');
         return false;
