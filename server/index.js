@@ -842,7 +842,8 @@ app.get('/debug/pdf-status', (req, res) => {
 });
 
 // Serve React app for all other routes (SPA catch-all)
-app.get('*', (req, res) => {
+// Express 5 requires named wildcard parameters
+app.get('{*path}', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'build', 'index.html'));
 });
 
