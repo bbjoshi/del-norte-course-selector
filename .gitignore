@@ -53,3 +53,9 @@ current-catalog.pdf
 
 # Feedback data
 feedback.json
+
+# SQLite database
+/data/
+*.db
+*.db-wal
+*.db-shm

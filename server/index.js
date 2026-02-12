@@ -12,6 +12,7 @@ const VectorSearchService = require('./services/VectorSearchService');
 const PDFService = require('./services/PDFService');
 const SearchService = require('./services/SearchService');
 const ChatService = require('./services/ChatService');
+const DatabaseService = require('./services/DatabaseService');
 
 // Flags to track embedding generation status
 let embeddingsGenerationInProgress = false;
@@ -120,7 +121,7 @@ app.use(cors({
     'http://localhost:3002',
     'http://localhost:3000'
   ],
-  methods: ['GET', 'POST'],
+  methods: ['GET', 'POST', 'DELETE'],
   credentials: true
 }));
 
@@ -634,40 +635,26 @@ app.get('/api/vector-search', async (req, res) => {
   }
 });
 
-// Feedback storage endpoint
+// Feedback storage endpoint (SQLite-backed)
 app.post('/api/feedback', (req, res) => {
   try {
-    const { messageId, query, response: botResponse, rating, comment, timestamp } = req.body;
+    const { messageId, sessionId, query, response: botResponse, rating, comment, timestamp } = req.body;
     
     if (!messageId || !rating) {
       return res.status(400).json({ error: 'messageId and rating are required' });
     }
     
-    const feedbackEntry = {
+    DatabaseService.addFeedback({
       messageId,
+      sessionId: sessionId || null,
       query: query || '',
       response: botResponse || '',
-      rating, // 'positive' or 'negative'
+      rating,
       comment: comment || '',
       timestamp: timestamp || new Date().toISOString(),
-    };
+    });
     
-    // Append feedback to a JSON file
-    const feedbackPath = path.join(__dirname, '..', 'feedback.json');
-    let feedbackData = [];
-    
-    if (fs.existsSync(feedbackPath)) {
-      try {
-        feedbackData = JSON.parse(fs.readFileSync(feedbackPath, 'utf8'));
-      } catch (e) {
-        feedbackData = [];
-      }
-    }
-    
-    feedbackData.push(feedbackEntry);
-    fs.writeFileSync(feedbackPath, JSON.stringify(feedbackData, null, 2));
-    
-    console.log(`Feedback received: ${rating} for message ${messageId}${comment ? ` - "${comment}"` : ''}`);
+    console.log(`Feedback stored in DB: ${rating} for message ${messageId}${comment ? ` - "${comment}"` : ''}`);
     res.json({ success: true });
   } catch (error) {
     console.error('Error storing feedback:', error);
@@ -675,19 +662,79 @@ app.post('/api/feedback', (req, res) => {
   }
 });
 
-// Get all feedback (for admin)
+// Get all feedback (for admin, SQLite-backed)
 app.get('/api/feedback', (req, res) => {
   try {
-    const feedbackPath = path.join(__dirname, '..', 'feedback.json');
-    if (fs.existsSync(feedbackPath)) {
-      const feedbackData = JSON.parse(fs.readFileSync(feedbackPath, 'utf8'));
-      res.json({ feedback: feedbackData, total: feedbackData.length });
-    } else {
-      res.json({ feedback: [], total: 0 });
-    }
+    const limit = parseInt(req.query.limit) || 100;
+    const feedback = DatabaseService.getFeedback(limit);
+    const stats = DatabaseService.getFeedbackStats();
+    res.json({ feedback, total: stats.total, stats });
   } catch (error) {
     console.error('Error reading feedback:', error);
     res.status(500).json({ error: 'Failed to read feedback' });
+  }
+});
+
+// === CHAT HISTORY API (SQLite-backed) ===
+
+// Get all chat sessions
+app.get('/api/chat-sessions', (req, res) => {
+  try {
+    const sessions = DatabaseService.getSessions();
+    res.json({ sessions });
+  } catch (error) {
+    console.error('Error fetching chat sessions:', error);
+    res.status(500).json({ error: 'Failed to fetch chat sessions' });
+  }
+});
+
+// Get a single session with its messages
+app.get('/api/chat-sessions/:sessionId', (req, res) => {
+  try {
+    const session = DatabaseService.getSession(req.params.sessionId);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    const messages = DatabaseService.getMessages(req.params.sessionId);
+    res.json({ session, messages });
+  } catch (error) {
+    console.error('Error fetching session:', error);
+    res.status(500).json({ error: 'Failed to fetch session' });
+  }
+});
+
+// Save a message to a session
+app.post('/api/chat-sessions/:sessionId/messages', (req, res) => {
+  try {
+    const { id, text, sender, queryText, timestamp } = req.body;
+    if (!id || !text || !sender) {
+      return res.status(400).json({ error: 'id, text, and sender are required' });
+    }
+    
+    DatabaseService.addMessage({
+      id,
+      sessionId: req.params.sessionId,
+      text,
+      sender,
+      queryText: queryText || null,
+      timestamp: timestamp || new Date().toISOString(),
+    });
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error saving message:', error);
+    res.status(500).json({ error: 'Failed to save message' });
+  }
+});
+
+// Delete a chat session
+app.delete('/api/chat-sessions/:sessionId', (req, res) => {
+  try {
+    DatabaseService.deleteSession(req.params.sessionId);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting session:', error);
+    res.status(500).json({ error: 'Failed to delete session' });
   }
 });
 

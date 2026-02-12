@@ -71,7 +71,7 @@ class PDFService {
    * @param {Buffer} pdfBuffer - PDF buffer
    * @returns {Promise<boolean>} - Success status
    */
-  async processPDFForVectorDB(pdfBuffer) {
+  async processPDFForVectorDB(pdfBuffer, documentType = 'unknown') {
     try {
       console.log('Starting PDF processing for vector database...');
       
@@ -137,7 +137,7 @@ class PDFService {
               }
               
               return {
-                id: `chunk-${i + j}`,
+                id: `chunk-${documentType || 'unknown'}-${i + j}`,
                 text,
                 embedding: embeddings[j]
               };

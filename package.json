@@ -33,6 +33,7 @@
     "@types/react": "^19.2.10",
     "@types/react-dom": "^19.2.3",
     "axios": "^1.13.4",
+    "better-sqlite3": "^12.6.2",
     "chromadb": "^3.2.2",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",

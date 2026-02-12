@@ -26,7 +26,6 @@ import {
   DrawerHeader,
   DrawerBody,
   useDisclosure,
-  Divider,
   Badge,
 } from '@chakra-ui/react';
 import axios from 'axios';
@@ -54,42 +53,10 @@ interface Message {
 interface ChatSession {
   id: string;
   title: string;
-  messages: Message[];
-  createdAt: string;
-  updatedAt: string;
+  created_at: string;
+  updated_at: string;
+  messageCount?: number;
 }
-
-const STORAGE_KEY = 'dncs_chat_sessions';
-const ACTIVE_SESSION_KEY = 'dncs_active_session';
-
-// Helper to serialize/deserialize messages with Date objects
-const serializeSessions = (sessions: ChatSession[]): string => {
-  return JSON.stringify(sessions);
-};
-
-const deserializeSessions = (data: string): ChatSession[] => {
-  try {
-    const sessions: ChatSession[] = JSON.parse(data);
-    return sessions.map(session => ({
-      ...session,
-      messages: session.messages.map(msg => ({
-        ...msg,
-        timestamp: new Date(msg.timestamp),
-      })),
-    }));
-  } catch {
-    return [];
-  }
-};
-
-const generateSessionTitle = (messages: Message[]): string => {
-  const firstUserMsg = messages.find(m => m.sender === 'user');
-  if (firstUserMsg) {
-    const title = firstUserMsg.text.slice(0, 50);
-    return title.length < firstUserMsg.text.length ? title + '...' : title;
-  }
-  return 'New Chat';
-};
 
 const ChatInterface: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -119,7 +86,6 @@ const ChatInterface: React.FC = () => {
   const sidebarHoverBg = useColorModeValue('gray.100', 'gray.600');
   const activeSessionBg = useColorModeValue('brand.50', 'brand.900');
 
-  // Initialize services
   const [pdfService] = useState(() => PDFService.getInstance());
   const [chatService] = useState(() => ChatService.getInstance());
 
@@ -127,77 +93,57 @@ const ChatInterface: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // Load chat sessions from localStorage
-  const loadSessions = useCallback((): ChatSession[] => {
+  // Load chat sessions from API
+  const loadSessions = useCallback(async () => {
     try {
-      const data = localStorage.getItem(STORAGE_KEY);
-      if (data) {
-        return deserializeSessions(data);
-      }
+      const response = await axios.get('/api/chat-sessions');
+      setChatSessions(response.data.sessions || []);
+      return response.data.sessions || [];
     } catch (error) {
       console.error('Error loading chat sessions:', error);
+      return [];
     }
-    return [];
   }, []);
 
-  // Save chat sessions to localStorage
-  const saveSessions = useCallback((sessions: ChatSession[]) => {
+  // Save a message to the API
+  const saveMessageToAPI = useCallback(async (sessionId: string, message: Message) => {
     try {
-      localStorage.setItem(STORAGE_KEY, serializeSessions(sessions));
-    } catch (error) {
-      console.error('Error saving chat sessions:', error);
-    }
-  }, []);
-
-  // Save active session ID
-  const saveActiveSessionId = useCallback((id: string | null) => {
-    try {
-      if (id) {
-        localStorage.setItem(ACTIVE_SESSION_KEY, id);
-      } else {
-        localStorage.removeItem(ACTIVE_SESSION_KEY);
-      }
-    } catch (error) {
-      console.error('Error saving active session ID:', error);
-    }
-  }, []);
-
-  // Update current session in storage whenever messages change
-  const updateCurrentSession = useCallback((currentMessages: Message[], sessionId: string | null, sessions: ChatSession[]) => {
-    if (!sessionId) return sessions;
-
-    // Don't save if only the welcome message exists
-    const hasUserMessages = currentMessages.some(m => m.sender === 'user');
-    if (!hasUserMessages) return sessions;
-
-    const updatedSessions = sessions.map(s => {
-      if (s.id === sessionId) {
-        return {
-          ...s,
-          messages: currentMessages,
-          title: generateSessionTitle(currentMessages),
-          updatedAt: new Date().toISOString(),
-        };
-      }
-      return s;
-    });
-
-    // If session doesn't exist yet, create it
-    if (!updatedSessions.find(s => s.id === sessionId)) {
-      updatedSessions.unshift({
-        id: sessionId,
-        title: generateSessionTitle(currentMessages),
-        messages: currentMessages,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+      await axios.post(`/api/chat-sessions/${sessionId}/messages`, {
+        id: message.id,
+        text: message.text,
+        sender: message.sender,
+        queryText: message.queryText || null,
+        timestamp: message.timestamp.toISOString(),
       });
+    } catch (error) {
+      console.error('Error saving message to API:', error);
     }
+  }, []);
 
-    saveSessions(updatedSessions);
-    return updatedSessions;
-  }, [saveSessions]);
+  // Load messages for a session from API
+  const loadSessionMessages = useCallback(async (sessionId: string): Promise<Message[]> => {
+    try {
+      const response = await axios.get(`/api/chat-sessions/${sessionId}`);
+      const dbMessages = response.data.messages || [];
+      return dbMessages.map((msg: any) => ({
+        id: msg.id,
+        text: msg.text,
+        sender: msg.sender,
+        timestamp: new Date(msg.timestamp),
+        queryText: msg.query_text || undefined,
+        feedback: msg.sender === 'bot' && msg.id !== 'welcome' ? {
+          rating: msg.feedback_rating || null,
+          comment: msg.feedback_comment || '',
+          submitted: !!msg.feedback_submitted,
+          showCommentBox: false,
+        } : undefined,
+      }));
+    } catch (error) {
+      console.error('Error loading session messages:', error);
+      return [];
+    }
+  }, []);
 
-  // Create welcome message
   const createWelcomeMessage = (): Message => ({
     id: 'welcome',
     text: "👋 Hello! I'm your Del Norte High School course selection assistant. I can help you with:\n\n" +
@@ -210,72 +156,59 @@ const ChatInterface: React.FC = () => {
     timestamp: new Date(),
   });
 
-  // Start a new chat session
   const startNewChat = useCallback(() => {
     const newSessionId = `session_${Date.now()}`;
     setActiveSessionId(newSessionId);
-    saveActiveSessionId(newSessionId);
     setMessages([createWelcomeMessage()]);
     onClose();
-  }, [saveActiveSessionId, onClose]);
+  }, [onClose]);
 
-  // Load a previous chat session
-  const loadSession = useCallback((session: ChatSession) => {
+  const loadSession = useCallback(async (session: ChatSession) => {
     setActiveSessionId(session.id);
-    saveActiveSessionId(session.id);
-    setMessages(session.messages);
-    onClose();
-  }, [saveActiveSessionId, onClose]);
-
-  // Delete a chat session
-  const deleteSession = useCallback((sessionId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const updatedSessions = chatSessions.filter(s => s.id !== sessionId);
-    setChatSessions(updatedSessions);
-    saveSessions(updatedSessions);
-
-    // If deleting the active session, start a new chat
-    if (sessionId === activeSessionId) {
-      startNewChat();
+    const messages = await loadSessionMessages(session.id);
+    if (messages.length > 0) {
+      setMessages(messages);
+    } else {
+      setMessages([createWelcomeMessage()]);
     }
+    onClose();
+  }, [loadSessionMessages, onClose]);
 
-    toast({
-      title: 'Chat deleted',
-      status: 'info',
-      duration: 1500,
-      isClosable: true,
-    });
-  }, [chatSessions, activeSessionId, saveSessions, startNewChat, toast]);
+  const deleteSession = useCallback(async (sessionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await axios.delete(`/api/chat-sessions/${sessionId}`);
+      setChatSessions(prev => prev.filter(s => s.id !== sessionId));
+      if (sessionId === activeSessionId) {
+        startNewChat();
+      }
+      toast({ title: 'Chat deleted', status: 'info', duration: 1500, isClosable: true });
+    } catch (error) {
+      console.error('Error deleting session:', error);
+      toast({ title: 'Error', description: 'Failed to delete chat', status: 'error', duration: 3000, isClosable: true });
+    }
+  }, [activeSessionId, startNewChat, toast]);
 
-  // Function to check embeddings status
   const checkEmbeddingsStatus = async () => {
     try {
       const response = await axios.get('/api/embeddings-status');
       setEmbeddingsStatus(response.data);
-      if (response.data.complete || response.data.error) {
-        return true;
-      }
-      return false;
+      return response.data.complete || response.data.error ? true : false;
     } catch (error) {
       console.error('Error checking embeddings status:', error);
       return false;
     }
   };
 
-  // Handle feedback rating
-  const handleFeedbackRating = async (messageId: string, rating: 'positive' | 'negative') => {
+  // Handle feedback
+  const handleFeedbackRating = (messageId: string, rating: 'positive' | 'negative') => {
     setMessages(prev => prev.map(msg => {
       if (msg.id === messageId) {
         const currentFeedback = msg.feedback || { rating: null, comment: '', submitted: false, showCommentBox: false };
         const isSameRating = currentFeedback.rating === rating;
         return {
           ...msg,
-          feedback: {
-            ...currentFeedback,
-            rating: isSameRating ? null : rating,
-            showCommentBox: !isSameRating,
-            submitted: false,
-          }
+          feedback: { ...currentFeedback, rating: isSameRating ? null : rating, showCommentBox: !isSameRating, submitted: false }
         };
       }
       return msg;
@@ -293,11 +226,12 @@ const ChatInterface: React.FC = () => {
 
   const submitFeedback = async (messageId: string) => {
     const message = messages.find(m => m.id === messageId);
-    if (!message || !message.feedback || !message.feedback.rating) return;
+    if (!message?.feedback?.rating) return;
 
     try {
       await axios.post('/api/feedback', {
         messageId: message.id,
+        sessionId: activeSessionId,
         query: message.queryText || '',
         response: message.text,
         rating: message.feedback.rating,
@@ -312,22 +246,10 @@ const ChatInterface: React.FC = () => {
         return msg;
       }));
 
-      toast({
-        title: 'Thank you!',
-        description: 'Your feedback has been recorded.',
-        status: 'success',
-        duration: 2000,
-        isClosable: true,
-      });
+      toast({ title: 'Thank you!', description: 'Your feedback has been recorded.', status: 'success', duration: 2000, isClosable: true });
     } catch (error) {
       console.error('Error submitting feedback:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to submit feedback.',
-        status: 'error',
-        duration: 3000,
-        isClosable: true,
-      });
+      toast({ title: 'Error', description: 'Failed to submit feedback.', status: 'error', duration: 3000, isClosable: true });
     }
   };
 
@@ -340,22 +262,22 @@ const ChatInterface: React.FC = () => {
         await checkEmbeddingsStatus();
         setIsInitialized(true);
 
-        // Load saved sessions
-        const savedSessions = loadSessions();
-        setChatSessions(savedSessions);
+        // Load saved sessions from API
+        const sessions = await loadSessions();
 
-        // Try to restore active session
-        const savedActiveId = localStorage.getItem(ACTIVE_SESSION_KEY);
-        const activeSession = savedActiveId ? savedSessions.find(s => s.id === savedActiveId) : null;
-
-        if (activeSession) {
-          setActiveSessionId(activeSession.id);
-          setMessages(activeSession.messages);
+        if (sessions.length > 0) {
+          // Load the most recent session
+          const latestSession = sessions[0];
+          setActiveSessionId(latestSession.id);
+          const sessionMessages = await loadSessionMessages(latestSession.id);
+          if (sessionMessages.length > 0) {
+            setMessages(sessionMessages);
+          } else {
+            setMessages([createWelcomeMessage()]);
+          }
         } else {
-          // Start fresh session
           const newId = `session_${Date.now()}`;
           setActiveSessionId(newId);
-          saveActiveSessionId(newId);
           setMessages([createWelcomeMessage()]);
         }
 
@@ -367,41 +289,19 @@ const ChatInterface: React.FC = () => {
           return () => clearInterval(pollInterval);
         }
       } catch (error) {
-        toast({
-          title: 'Error',
-          description: 'Failed to load course catalog',
-          status: 'error',
-          duration: 5000,
-          isClosable: true,
-        });
+        toast({ title: 'Error', description: 'Failed to load course catalog', status: 'error', duration: 5000, isClosable: true });
       } finally {
         setIsLoading(false);
       }
     };
-
     initializePDF();
-  }, [pdfService, toast, loadSessions, saveActiveSessionId]);
+  }, [pdfService, toast, loadSessions, loadSessionMessages]);
 
-  // Save session when messages change
-  useEffect(() => {
-    if (activeSessionId && messages.length > 0) {
-      const hasUserMessages = messages.some(m => m.sender === 'user');
-      if (hasUserMessages) {
-        setChatSessions(prev => {
-          const updated = updateCurrentSession(messages, activeSessionId, prev);
-          return updated;
-        });
-      }
-    }
-  }, [messages, activeSessionId, updateCurrentSession]);
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+  useEffect(() => { scrollToBottom(); }, [messages]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputMessage.trim() || !isInitialized) return;
+    if (!inputMessage.trim() || !isInitialized || !activeSessionId) return;
 
     const userQueryText = inputMessage.trim();
     const userMessage: Message = {
@@ -415,6 +315,12 @@ const ChatInterface: React.FC = () => {
     setInputMessage('');
     setIsLoading(true);
 
+    // Save user message to DB
+    await saveMessageToAPI(activeSessionId, userMessage);
+
+    // Refresh sessions list (in case this created a new session)
+    loadSessions();
+
     try {
       const response = await chatService.processQuery(userMessage.text);
       const botMessage: Message = {
@@ -426,14 +332,12 @@ const ChatInterface: React.FC = () => {
         feedback: { rating: null, comment: '', submitted: false, showCommentBox: false },
       };
       setMessages(prev => [...prev, botMessage]);
+
+      // Save bot message to DB
+      await saveMessageToAPI(activeSessionId, botMessage);
+      loadSessions();
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to get response from the chatbot',
-        status: 'error',
-        duration: 3000,
-        isClosable: true,
-      });
+      toast({ title: 'Error', description: 'Failed to get response from the chatbot', status: 'error', duration: 3000, isClosable: true });
     } finally {
       setIsLoading(false);
     }
@@ -453,75 +357,30 @@ const ChatInterface: React.FC = () => {
           {!submitted && (
             <>
               <Tooltip label="Helpful" placement="top" hasArrow>
-                <IconButton
-                  aria-label="Thumbs up"
-                  icon={<span style={{ fontSize: '16px' }}>{rating === 'positive' ? '👍' : '👍🏻'}</span>}
-                  size="xs"
-                  variant={rating === 'positive' ? 'solid' : 'ghost'}
-                  colorScheme={rating === 'positive' ? 'green' : 'gray'}
-                  onClick={() => handleFeedbackRating(message.id, 'positive')}
-                  borderRadius="full"
-                />
+                <IconButton aria-label="Thumbs up" icon={<span style={{ fontSize: '16px' }}>{rating === 'positive' ? '👍' : '👍🏻'}</span>} size="xs" variant={rating === 'positive' ? 'solid' : 'ghost'} colorScheme={rating === 'positive' ? 'green' : 'gray'} onClick={() => handleFeedbackRating(message.id, 'positive')} borderRadius="full" />
               </Tooltip>
               <Tooltip label="Not helpful" placement="top" hasArrow>
-                <IconButton
-                  aria-label="Thumbs down"
-                  icon={<span style={{ fontSize: '16px' }}>{rating === 'negative' ? '👎' : '👎🏻'}</span>}
-                  size="xs"
-                  variant={rating === 'negative' ? 'solid' : 'ghost'}
-                  colorScheme={rating === 'negative' ? 'red' : 'gray'}
-                  onClick={() => handleFeedbackRating(message.id, 'negative')}
-                  borderRadius="full"
-                />
+                <IconButton aria-label="Thumbs down" icon={<span style={{ fontSize: '16px' }}>{rating === 'negative' ? '👎' : '👎🏻'}</span>} size="xs" variant={rating === 'negative' ? 'solid' : 'ghost'} colorScheme={rating === 'negative' ? 'red' : 'gray'} onClick={() => handleFeedbackRating(message.id, 'negative')} borderRadius="full" />
               </Tooltip>
             </>
           )}
-          {submitted && (
-            <Text fontSize="xs" color={rating === 'positive' ? 'green.500' : 'red.500'}>
-              {rating === 'positive' ? '👍' : '👎'}
-            </Text>
-          )}
+          {submitted && <Text fontSize="xs" color={rating === 'positive' ? 'green.500' : 'red.500'}>{rating === 'positive' ? '👍' : '👎'}</Text>}
         </HStack>
-
         <Collapse in={showCommentBox && !submitted} animateOpacity>
           <Box mt={2} p={2} bg={feedbackBg} borderRadius="md">
-            <Text fontSize="xs" color="gray.600" mb={1}>
-              {rating === 'negative' ? 'What was wrong or could be improved?' : 'What did you find helpful? (optional)'}
-            </Text>
-            <Textarea
-              size="sm"
-              fontSize="sm"
-              placeholder={rating === 'negative' ? 'e.g., The information was incorrect...' : 'e.g., Great course recommendations...'}
-              value={comment}
-              onChange={(e) => handleFeedbackComment(message.id, e.target.value)}
-              rows={2}
-              resize="none"
-              bg="white"
-              borderColor="gray.300"
-              _focus={{ borderColor: 'brand.500' }}
-            />
+            <Text fontSize="xs" color="gray.600" mb={1}>{rating === 'negative' ? 'What was wrong or could be improved?' : 'What did you find helpful? (optional)'}</Text>
+            <Textarea size="sm" fontSize="sm" placeholder={rating === 'negative' ? 'e.g., The information was incorrect...' : 'e.g., Great course recommendations...'} value={comment} onChange={(e) => handleFeedbackComment(message.id, e.target.value)} rows={2} resize="none" bg="white" borderColor="gray.300" _focus={{ borderColor: 'brand.500' }} />
             <HStack mt={2} justify="flex-end" spacing={2}>
-              <Button size="xs" variant="ghost" onClick={() => {
-                setMessages(prev => prev.map(msg => {
-                  if (msg.id === message.id && msg.feedback) {
-                    return { ...msg, feedback: { ...msg.feedback, showCommentBox: false, rating: null, comment: '' } };
-                  }
-                  return msg;
-                }));
-              }}>Cancel</Button>
+              <Button size="xs" variant="ghost" onClick={() => { setMessages(prev => prev.map(msg => msg.id === message.id && msg.feedback ? { ...msg, feedback: { ...msg.feedback, showCommentBox: false, rating: null, comment: '' } } : msg)); }}>Cancel</Button>
               <Button size="xs" colorScheme="brand" onClick={() => submitFeedback(message.id)}>Submit</Button>
             </HStack>
           </Box>
         </Collapse>
-
-        {submitted && comment && (
-          <Text fontSize="xs" color="gray.400" mt={1} fontStyle="italic">"{comment}"</Text>
-        )}
+        {submitted && comment && <Text fontSize="xs" color="gray.400" mt={1} fontStyle="italic">"{comment}"</Text>}
       </Box>
     );
   };
 
-  // Format date for session display
   const formatSessionDate = (dateStr: string) => {
     const date = new Date(dateStr);
     const now = new Date();
@@ -529,7 +388,6 @@ const ChatInterface: React.FC = () => {
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
-
     if (diffMins < 1) return 'Just now';
     if (diffMins < 60) return `${diffMins}m ago`;
     if (diffHours < 24) return `${diffHours}h ago`;
@@ -538,48 +396,19 @@ const ChatInterface: React.FC = () => {
   };
 
   return (
-    <Box
-      borderWidth={1}
-      borderRadius="xl"
-      overflow="hidden"
-      bg="white"
-      height="70vh"
-      display="flex"
-      flexDirection="column"
-      boxShadow="lg"
-    >
+    <Box borderWidth={1} borderRadius="xl" overflow="hidden" bg="white" height="70vh" display="flex" flexDirection="column" boxShadow="lg">
       {/* Chat Header */}
       <Box p={4} borderBottomWidth={1} bg="brand.600" color="white">
         <Flex justify="space-between" align="center">
           <Heading size="md">Course Selection Assistant</Heading>
           <HStack spacing={2}>
             <Tooltip label="New Chat" placement="bottom" hasArrow>
-              <IconButton
-                aria-label="New chat"
-                icon={<span style={{ fontSize: '18px' }}>✏️</span>}
-                size="sm"
-                variant="ghost"
-                color="white"
-                _hover={{ bg: 'brand.700' }}
-                onClick={startNewChat}
-              />
+              <IconButton aria-label="New chat" icon={<span style={{ fontSize: '18px' }}>✏️</span>} size="sm" variant="ghost" color="white" _hover={{ bg: 'brand.700' }} onClick={startNewChat} />
             </Tooltip>
             <Tooltip label="Chat History" placement="bottom" hasArrow>
-              <IconButton
-                aria-label="Chat history"
-                icon={<span style={{ fontSize: '18px' }}>📋</span>}
-                size="sm"
-                variant="ghost"
-                color="white"
-                _hover={{ bg: 'brand.700' }}
-                onClick={onOpen}
-              />
+              <IconButton aria-label="Chat history" icon={<span style={{ fontSize: '18px' }}>📋</span>} size="sm" variant="ghost" color="white" _hover={{ bg: 'brand.700' }} onClick={() => { loadSessions(); onOpen(); }} />
             </Tooltip>
-            {chatSessions.length > 0 && (
-              <Badge colorScheme="whiteAlpha" variant="solid" fontSize="xs" borderRadius="full">
-                {chatSessions.length}
-              </Badge>
-            )}
+            {chatSessions.length > 0 && <Badge colorScheme="whiteAlpha" variant="solid" fontSize="xs" borderRadius="full">{chatSessions.length}</Badge>}
           </HStack>
         </Flex>
       </Box>
@@ -592,9 +421,7 @@ const ChatInterface: React.FC = () => {
           <DrawerHeader borderBottomWidth={1}>
             <Flex justify="space-between" align="center" pr={8}>
               <Text>Chat History</Text>
-              <Button size="sm" colorScheme="brand" onClick={startNewChat}>
-                + New Chat
-              </Button>
+              <Button size="sm" colorScheme="brand" onClick={startNewChat}>+ New Chat</Button>
             </Flex>
           </DrawerHeader>
           <DrawerBody p={0}>
@@ -602,70 +429,27 @@ const ChatInterface: React.FC = () => {
               <Center p={8}>
                 <VStack spacing={2}>
                   <Text fontSize="lg">💬</Text>
-                  <Text color="gray.500" textAlign="center" fontSize="sm">
-                    No previous chats yet. Start a conversation!
-                  </Text>
+                  <Text color="gray.500" textAlign="center" fontSize="sm">No previous chats yet. Start a conversation!</Text>
                 </VStack>
               </Center>
             ) : (
               <VStack spacing={0} align="stretch">
-                {chatSessions
-                  .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-                  .map((session) => {
-                    const messageCount = session.messages.filter(m => m.sender === 'user').length;
-                    const isActive = session.id === activeSessionId;
-
-                    return (
-                      <Box
-                        key={session.id}
-                        px={4}
-                        py={3}
-                        cursor="pointer"
-                        bg={isActive ? activeSessionBg : 'transparent'}
-                        _hover={{ bg: isActive ? activeSessionBg : sidebarHoverBg }}
-                        onClick={() => loadSession(session)}
-                        borderBottomWidth={1}
-                        borderColor="gray.100"
-                        position="relative"
-                      >
-                        <Flex justify="space-between" align="flex-start">
-                          <Box flex={1} mr={2} overflow="hidden">
-                            <Text
-                              fontSize="sm"
-                              fontWeight={isActive ? 'bold' : 'medium'}
-                              noOfLines={1}
-                              color={isActive ? 'brand.700' : 'gray.800'}
-                            >
-                              {session.title}
-                            </Text>
-                            <HStack spacing={2} mt={1}>
-                              <Text fontSize="xs" color="gray.500">
-                                {formatSessionDate(session.updatedAt)}
-                              </Text>
-                              <Text fontSize="xs" color="gray.400">
-                                •
-                              </Text>
-                              <Text fontSize="xs" color="gray.500">
-                                {messageCount} {messageCount === 1 ? 'message' : 'messages'}
-                              </Text>
-                            </HStack>
-                          </Box>
-                          <Tooltip label="Delete chat" placement="top" hasArrow>
-                            <IconButton
-                              aria-label="Delete chat"
-                              icon={<span style={{ fontSize: '14px' }}>🗑️</span>}
-                              size="xs"
-                              variant="ghost"
-                              colorScheme="red"
-                              onClick={(e) => deleteSession(session.id, e)}
-                              opacity={0.5}
-                              _hover={{ opacity: 1 }}
-                            />
-                          </Tooltip>
-                        </Flex>
-                      </Box>
-                    );
-                  })}
+                {chatSessions.map((session) => {
+                  const isActive = session.id === activeSessionId;
+                  return (
+                    <Box key={session.id} px={4} py={3} cursor="pointer" bg={isActive ? activeSessionBg : 'transparent'} _hover={{ bg: isActive ? activeSessionBg : sidebarHoverBg }} onClick={() => loadSession(session)} borderBottomWidth={1} borderColor="gray.100">
+                      <Flex justify="space-between" align="flex-start">
+                        <Box flex={1} mr={2} overflow="hidden">
+                          <Text fontSize="sm" fontWeight={isActive ? 'bold' : 'medium'} noOfLines={1} color={isActive ? 'brand.700' : 'gray.800'}>{session.title}</Text>
+                          <Text fontSize="xs" color="gray.500" mt={1}>{formatSessionDate(session.updated_at)}</Text>
+                        </Box>
+                        <Tooltip label="Delete chat" placement="top" hasArrow>
+                          <IconButton aria-label="Delete chat" icon={<span style={{ fontSize: '14px' }}>🗑️</span>} size="xs" variant="ghost" colorScheme="red" onClick={(e) => deleteSession(session.id, e)} opacity={0.5} _hover={{ opacity: 1 }} />
+                        </Tooltip>
+                      </Flex>
+                    </Box>
+                  );
+                })}
               </VStack>
             )}
           </DrawerBody>
@@ -674,58 +458,31 @@ const ChatInterface: React.FC = () => {
 
       {/* Messages Area */}
       {!isInitialized ? (
-        <Center flex={1} bg={chatBg}>
-          <VStack spacing={4}>
-            <Spinner size="xl" color="brand.500" thickness="4px" />
-            <Text color="gray.500">Loading course catalog...</Text>
-          </VStack>
-        </Center>
+        <Center flex={1} bg={chatBg}><VStack spacing={4}><Spinner size="xl" color="brand.500" thickness="4px" /><Text color="gray.500">Loading course catalog...</Text></VStack></Center>
       ) : embeddingsStatus.inProgress ? (
         <Center flex={1} bg={chatBg}>
           <VStack spacing={4} width="80%">
             <Spinner size="md" color="brand.500" thickness="3px" />
             <Text color="gray.700" fontWeight="medium">Generating AI embeddings for better search results...</Text>
             <Progress value={embeddingsStatus.progress} size="sm" width="100%" colorScheme="brand" hasStripe isAnimated />
-            <Text color="gray.500" fontSize="sm">
-              {embeddingsStatus.progress}% complete ({embeddingsStatus.vectorCount} vectors generated)
-            </Text>
-            <Text color="gray.600" fontSize="sm" mt={2}>
-              You can start chatting now, but search results will improve once this process completes.
-            </Text>
+            <Text color="gray.500" fontSize="sm">{embeddingsStatus.progress}% complete ({embeddingsStatus.vectorCount} vectors generated)</Text>
+            <Text color="gray.600" fontSize="sm" mt={2}>You can start chatting now, but search results will improve once this process completes.</Text>
           </VStack>
         </Center>
       ) : (
         <VStack flex={1} overflowY="auto" p={4} spacing={4} align="stretch" bg={chatBg}>
           {messages.map(message => (
             <Flex key={message.id} justify={message.sender === 'user' ? 'flex-end' : 'flex-start'}>
-              <Box
-                maxW={{ base: "85%", md: "70%" }}
-                bg={message.sender === 'user' ? userBubbleBg : botBubbleBg}
-                color={message.sender === 'user' ? 'white' : 'inherit'}
-                p={4}
-                borderRadius="lg"
-                boxShadow="md"
-                borderWidth={message.sender === 'bot' ? 1 : 0}
-                borderColor={message.sender === 'bot' ? botBubbleBorder : 'transparent'}
-              >
+              <Box maxW={{ base: "85%", md: "70%" }} bg={message.sender === 'user' ? userBubbleBg : botBubbleBg} color={message.sender === 'user' ? 'white' : 'inherit'} p={4} borderRadius="lg" boxShadow="md" borderWidth={message.sender === 'bot' ? 1 : 0} borderColor={message.sender === 'bot' ? botBubbleBorder : 'transparent'}>
                 {message.sender === 'user' ? (
                   <Text fontWeight="medium">{message.text}</Text>
                 ) : (
-                  <Box className="markdown-content">
-                    <ReactMarkdown>{message.text}</ReactMarkdown>
-                  </Box>
+                  <Box className="markdown-content"><ReactMarkdown>{message.text}</ReactMarkdown></Box>
                 )}
-                <Text
-                  fontSize="xs"
-                  color={message.sender === 'user' ? 'whiteAlpha.800' : 'gray.500'}
-                  mt={2}
-                  textAlign="right"
-                >
+                <Text fontSize="xs" color={message.sender === 'user' ? 'whiteAlpha.800' : 'gray.500'} mt={2} textAlign="right">
                   {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </Text>
-                {message.sender === 'bot' && message.id !== 'welcome' && (
-                  <FeedbackSection message={message} />
-                )}
+                {message.sender === 'bot' && message.id !== 'welcome' && <FeedbackSection message={message} />}
               </Box>
             </Flex>
           ))}
@@ -735,37 +492,12 @@ const ChatInterface: React.FC = () => {
 
       {/* Input Area */}
       <Box p={4} borderTopWidth={1} bg="white">
-        {embeddingsStatus.error && (
-          <Text color="orange.500" mb={2} fontSize="sm">
-            Note: Advanced search is unavailable. Using traditional search instead.
-          </Text>
-        )}
+        {embeddingsStatus.error && <Text color="orange.500" mb={2} fontSize="sm">Note: Advanced search is unavailable. Using traditional search instead.</Text>}
         <form onSubmit={handleSendMessage}>
           <InputGroup size="lg">
-            <Input
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              placeholder="Ask about courses, requirements, or recommendations..."
-              disabled={isLoading || !isInitialized}
-              pr="4.5rem"
-              focusBorderColor="brand.500"
-              borderRadius="md"
-              boxShadow="sm"
-              _hover={{ borderColor: 'brand.300' }}
-            />
+            <Input value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} placeholder="Ask about courses, requirements, or recommendations..." disabled={isLoading || !isInitialized} pr="4.5rem" focusBorderColor="brand.500" borderRadius="md" boxShadow="sm" _hover={{ borderColor: 'brand.300' }} />
             <InputRightElement width="4.5rem">
-              <Button
-                h="1.75rem"
-                size="sm"
-                type="submit"
-                colorScheme="brand"
-                isLoading={isLoading}
-                loadingText="Sending"
-                disabled={!isInitialized || !inputMessage.trim()}
-                borderRadius="md"
-              >
-                Send
-              </Button>
+              <Button h="1.75rem" size="sm" type="submit" colorScheme="brand" isLoading={isLoading} loadingText="Sending" disabled={!isInitialized || !inputMessage.trim()} borderRadius="md">Send</Button>
             </InputRightElement>
           </InputGroup>
         </form>
