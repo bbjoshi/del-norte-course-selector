@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Box,
   VStack,
@@ -19,6 +19,15 @@ import {
   HStack,
   Collapse,
   Tooltip,
+  Drawer,
+  DrawerOverlay,
+  DrawerContent,
+  DrawerCloseButton,
+  DrawerHeader,
+  DrawerBody,
+  useDisclosure,
+  Divider,
+  Badge,
 } from '@chakra-ui/react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
@@ -38,15 +47,57 @@ interface Message {
   text: string;
   sender: 'user' | 'bot';
   timestamp: Date;
-  queryText?: string; // Store the user query that prompted this bot response
+  queryText?: string;
   feedback?: FeedbackState;
 }
+
+interface ChatSession {
+  id: string;
+  title: string;
+  messages: Message[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+const STORAGE_KEY = 'dncs_chat_sessions';
+const ACTIVE_SESSION_KEY = 'dncs_active_session';
+
+// Helper to serialize/deserialize messages with Date objects
+const serializeSessions = (sessions: ChatSession[]): string => {
+  return JSON.stringify(sessions);
+};
+
+const deserializeSessions = (data: string): ChatSession[] => {
+  try {
+    const sessions: ChatSession[] = JSON.parse(data);
+    return sessions.map(session => ({
+      ...session,
+      messages: session.messages.map(msg => ({
+        ...msg,
+        timestamp: new Date(msg.timestamp),
+      })),
+    }));
+  } catch {
+    return [];
+  }
+};
+
+const generateSessionTitle = (messages: Message[]): string => {
+  const firstUserMsg = messages.find(m => m.sender === 'user');
+  if (firstUserMsg) {
+    const title = firstUserMsg.text.slice(0, 50);
+    return title.length < firstUserMsg.text.length ? title + '...' : title;
+  }
+  return 'New Chat';
+};
 
 const ChatInterface: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [embeddingsStatus, setEmbeddingsStatus] = useState({
     inProgress: false,
     complete: false,
@@ -57,6 +108,7 @@ const ChatInterface: React.FC = () => {
   });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
+  const { isOpen, onOpen, onClose } = useDisclosure();
 
   // Theme colors
   const userBubbleBg = useColorModeValue('brand.600', 'brand.500');
@@ -64,6 +116,8 @@ const ChatInterface: React.FC = () => {
   const botBubbleBorder = useColorModeValue('gray.200', 'gray.600');
   const chatBg = useColorModeValue('gray.50', 'gray.800');
   const feedbackBg = useColorModeValue('gray.50', 'gray.600');
+  const sidebarHoverBg = useColorModeValue('gray.100', 'gray.600');
+  const activeSessionBg = useColorModeValue('brand.50', 'brand.900');
 
   // Initialize services
   const [pdfService] = useState(() => PDFService.getInstance());
@@ -73,13 +127,131 @@ const ChatInterface: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  // Load chat sessions from localStorage
+  const loadSessions = useCallback((): ChatSession[] => {
+    try {
+      const data = localStorage.getItem(STORAGE_KEY);
+      if (data) {
+        return deserializeSessions(data);
+      }
+    } catch (error) {
+      console.error('Error loading chat sessions:', error);
+    }
+    return [];
+  }, []);
+
+  // Save chat sessions to localStorage
+  const saveSessions = useCallback((sessions: ChatSession[]) => {
+    try {
+      localStorage.setItem(STORAGE_KEY, serializeSessions(sessions));
+    } catch (error) {
+      console.error('Error saving chat sessions:', error);
+    }
+  }, []);
+
+  // Save active session ID
+  const saveActiveSessionId = useCallback((id: string | null) => {
+    try {
+      if (id) {
+        localStorage.setItem(ACTIVE_SESSION_KEY, id);
+      } else {
+        localStorage.removeItem(ACTIVE_SESSION_KEY);
+      }
+    } catch (error) {
+      console.error('Error saving active session ID:', error);
+    }
+  }, []);
+
+  // Update current session in storage whenever messages change
+  const updateCurrentSession = useCallback((currentMessages: Message[], sessionId: string | null, sessions: ChatSession[]) => {
+    if (!sessionId) return sessions;
+
+    // Don't save if only the welcome message exists
+    const hasUserMessages = currentMessages.some(m => m.sender === 'user');
+    if (!hasUserMessages) return sessions;
+
+    const updatedSessions = sessions.map(s => {
+      if (s.id === sessionId) {
+        return {
+          ...s,
+          messages: currentMessages,
+          title: generateSessionTitle(currentMessages),
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return s;
+    });
+
+    // If session doesn't exist yet, create it
+    if (!updatedSessions.find(s => s.id === sessionId)) {
+      updatedSessions.unshift({
+        id: sessionId,
+        title: generateSessionTitle(currentMessages),
+        messages: currentMessages,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    saveSessions(updatedSessions);
+    return updatedSessions;
+  }, [saveSessions]);
+
+  // Create welcome message
+  const createWelcomeMessage = (): Message => ({
+    id: 'welcome',
+    text: "👋 Hello! I'm your Del Norte High School course selection assistant. I can help you with:\n\n" +
+          "- Finding specific courses and their requirements\n" +
+          "- Creating a 4-year course plan\n" +
+          "- Understanding graduation requirements\n" +
+          "- Recommending courses based on your interests\n\n" +
+          "How can I assist you today?",
+    sender: 'bot',
+    timestamp: new Date(),
+  });
+
+  // Start a new chat session
+  const startNewChat = useCallback(() => {
+    const newSessionId = `session_${Date.now()}`;
+    setActiveSessionId(newSessionId);
+    saveActiveSessionId(newSessionId);
+    setMessages([createWelcomeMessage()]);
+    onClose();
+  }, [saveActiveSessionId, onClose]);
+
+  // Load a previous chat session
+  const loadSession = useCallback((session: ChatSession) => {
+    setActiveSessionId(session.id);
+    saveActiveSessionId(session.id);
+    setMessages(session.messages);
+    onClose();
+  }, [saveActiveSessionId, onClose]);
+
+  // Delete a chat session
+  const deleteSession = useCallback((sessionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updatedSessions = chatSessions.filter(s => s.id !== sessionId);
+    setChatSessions(updatedSessions);
+    saveSessions(updatedSessions);
+
+    // If deleting the active session, start a new chat
+    if (sessionId === activeSessionId) {
+      startNewChat();
+    }
+
+    toast({
+      title: 'Chat deleted',
+      status: 'info',
+      duration: 1500,
+      isClosable: true,
+    });
+  }, [chatSessions, activeSessionId, saveSessions, startNewChat, toast]);
+
   // Function to check embeddings status
   const checkEmbeddingsStatus = async () => {
     try {
       const response = await axios.get('/api/embeddings-status');
       setEmbeddingsStatus(response.data);
-      
-      // If embeddings generation is complete or there was an error, stop polling
       if (response.data.complete || response.data.error) {
         return true;
       }
@@ -90,19 +262,18 @@ const ChatInterface: React.FC = () => {
     }
   };
 
-  // Handle feedback rating (thumbs up/down)
+  // Handle feedback rating
   const handleFeedbackRating = async (messageId: string, rating: 'positive' | 'negative') => {
     setMessages(prev => prev.map(msg => {
       if (msg.id === messageId) {
         const currentFeedback = msg.feedback || { rating: null, comment: '', submitted: false, showCommentBox: false };
         const isSameRating = currentFeedback.rating === rating;
-        
         return {
           ...msg,
           feedback: {
             ...currentFeedback,
             rating: isSameRating ? null : rating,
-            showCommentBox: !isSameRating, // Show comment box when selecting a rating
+            showCommentBox: !isSameRating,
             submitted: false,
           }
         };
@@ -111,23 +282,15 @@ const ChatInterface: React.FC = () => {
     }));
   };
 
-  // Handle feedback comment change
   const handleFeedbackComment = (messageId: string, comment: string) => {
     setMessages(prev => prev.map(msg => {
       if (msg.id === messageId && msg.feedback) {
-        return {
-          ...msg,
-          feedback: {
-            ...msg.feedback,
-            comment,
-          }
-        };
+        return { ...msg, feedback: { ...msg.feedback, comment } };
       }
       return msg;
     }));
   };
 
-  // Submit feedback to the server
   const submitFeedback = async (messageId: string) => {
     const message = messages.find(m => m.id === messageId);
     if (!message || !message.feedback || !message.feedback.rating) return;
@@ -142,17 +305,9 @@ const ChatInterface: React.FC = () => {
         timestamp: new Date().toISOString(),
       });
 
-      // Mark as submitted
       setMessages(prev => prev.map(msg => {
         if (msg.id === messageId && msg.feedback) {
-          return {
-            ...msg,
-            feedback: {
-              ...msg.feedback,
-              submitted: true,
-              showCommentBox: false,
-            }
-          };
+          return { ...msg, feedback: { ...msg.feedback, submitted: true, showCommentBox: false } };
         }
         return msg;
       }));
@@ -168,7 +323,7 @@ const ChatInterface: React.FC = () => {
       console.error('Error submitting feedback:', error);
       toast({
         title: 'Error',
-        description: 'Failed to submit feedback. Please try again.',
+        description: 'Failed to submit feedback.',
         status: 'error',
         duration: 3000,
         isClosable: true,
@@ -176,43 +331,39 @@ const ChatInterface: React.FC = () => {
     }
   };
 
+  // Initialize
   useEffect(() => {
     const initializePDF = async () => {
       try {
         setIsLoading(true);
-        // Use the PDF URL from the server
         await pdfService.loadPDF('/api/pdf');
-        
-        // Check initial embeddings status
         await checkEmbeddingsStatus();
-        
-        // Set initialized to true to show the chat interface
         setIsInitialized(true);
-        
-        // Add welcome message
-        const welcomeMessage: Message = {
-          id: 'welcome',
-          text: "👋 Hello! I'm your Del Norte High School course selection assistant. I can help you with:\n\n" +
-                "- Finding specific courses and their requirements\n" +
-                "- Creating a 4-year course plan\n" +
-                "- Understanding graduation requirements\n" +
-                "- Recommending courses based on your interests\n\n" +
-                "How can I assist you today?",
-          sender: 'bot',
-          timestamp: new Date(),
-        };
-        setMessages([welcomeMessage]);
-        
-        // Start polling for embeddings status if in progress
+
+        // Load saved sessions
+        const savedSessions = loadSessions();
+        setChatSessions(savedSessions);
+
+        // Try to restore active session
+        const savedActiveId = localStorage.getItem(ACTIVE_SESSION_KEY);
+        const activeSession = savedActiveId ? savedSessions.find(s => s.id === savedActiveId) : null;
+
+        if (activeSession) {
+          setActiveSessionId(activeSession.id);
+          setMessages(activeSession.messages);
+        } else {
+          // Start fresh session
+          const newId = `session_${Date.now()}`;
+          setActiveSessionId(newId);
+          saveActiveSessionId(newId);
+          setMessages([createWelcomeMessage()]);
+        }
+
         if (embeddingsStatus.inProgress) {
           const pollInterval = setInterval(async () => {
             const isDone = await checkEmbeddingsStatus();
-            if (isDone) {
-              clearInterval(pollInterval);
-            }
-          }, 2000); // Check every 2 seconds
-          
-          // Clean up interval on component unmount
+            if (isDone) clearInterval(pollInterval);
+          }, 2000);
           return () => clearInterval(pollInterval);
         }
       } catch (error) {
@@ -229,7 +380,20 @@ const ChatInterface: React.FC = () => {
     };
 
     initializePDF();
-  }, [pdfService, toast]);
+  }, [pdfService, toast, loadSessions, saveActiveSessionId]);
+
+  // Save session when messages change
+  useEffect(() => {
+    if (activeSessionId && messages.length > 0) {
+      const hasUserMessages = messages.some(m => m.sender === 'user');
+      if (hasUserMessages) {
+        setChatSessions(prev => {
+          const updated = updateCurrentSession(messages, activeSessionId, prev);
+          return updated;
+        });
+      }
+    }
+  }, [messages, activeSessionId, updateCurrentSession]);
 
   useEffect(() => {
     scrollToBottom();
@@ -237,11 +401,9 @@ const ChatInterface: React.FC = () => {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (!inputMessage.trim() || !isInitialized) return;
 
     const userQueryText = inputMessage.trim();
-    
     const userMessage: Message = {
       id: Date.now().toString(),
       text: userQueryText,
@@ -255,21 +417,14 @@ const ChatInterface: React.FC = () => {
 
     try {
       const response = await chatService.processQuery(userMessage.text);
-      
       const botMessage: Message = {
         id: (Date.now() + 1).toString(),
         text: response,
         sender: 'bot',
         timestamp: new Date(),
         queryText: userQueryText,
-        feedback: {
-          rating: null,
-          comment: '',
-          submitted: false,
-          showCommentBox: false,
-        },
+        feedback: { rating: null, comment: '', submitted: false, showCommentBox: false },
       };
-
       setMessages(prev => [...prev, botMessage]);
     } catch (error) {
       toast({
@@ -284,7 +439,7 @@ const ChatInterface: React.FC = () => {
     }
   };
 
-  // Feedback component for bot messages
+  // Feedback section component
   const FeedbackSection: React.FC<{ message: Message }> = ({ message }) => {
     if (!message.feedback) return null;
     const { rating, comment, submitted, showCommentBox } = message.feedback;
@@ -295,7 +450,6 @@ const ChatInterface: React.FC = () => {
           <Text fontSize="xs" color="gray.500" mr={1}>
             {submitted ? 'Thanks for your feedback!' : 'Was this helpful?'}
           </Text>
-          
           {!submitted && (
             <>
               <Tooltip label="Helpful" placement="top" hasArrow>
@@ -322,7 +476,6 @@ const ChatInterface: React.FC = () => {
               </Tooltip>
             </>
           )}
-          
           {submitted && (
             <Text fontSize="xs" color={rating === 'positive' ? 'green.500' : 'red.500'}>
               {rating === 'positive' ? '👍' : '👎'}
@@ -333,18 +486,12 @@ const ChatInterface: React.FC = () => {
         <Collapse in={showCommentBox && !submitted} animateOpacity>
           <Box mt={2} p={2} bg={feedbackBg} borderRadius="md">
             <Text fontSize="xs" color="gray.600" mb={1}>
-              {rating === 'negative'
-                ? 'What was wrong or could be improved?'
-                : 'What did you find helpful? (optional)'}
+              {rating === 'negative' ? 'What was wrong or could be improved?' : 'What did you find helpful? (optional)'}
             </Text>
             <Textarea
               size="sm"
               fontSize="sm"
-              placeholder={
-                rating === 'negative'
-                  ? 'e.g., The information was incorrect, missing details...'
-                  : 'e.g., The course recommendations were spot on...'
-              }
+              placeholder={rating === 'negative' ? 'e.g., The information was incorrect...' : 'e.g., Great course recommendations...'}
               value={comment}
               onChange={(e) => handleFeedbackComment(message.id, e.target.value)}
               rows={2}
@@ -354,46 +501,40 @@ const ChatInterface: React.FC = () => {
               _focus={{ borderColor: 'brand.500' }}
             />
             <HStack mt={2} justify="flex-end" spacing={2}>
-              <Button
-                size="xs"
-                variant="ghost"
-                onClick={() => {
-                  setMessages(prev => prev.map(msg => {
-                    if (msg.id === message.id && msg.feedback) {
-                      return {
-                        ...msg,
-                        feedback: {
-                          ...msg.feedback,
-                          showCommentBox: false,
-                          rating: null,
-                          comment: '',
-                        }
-                      };
-                    }
-                    return msg;
-                  }));
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                size="xs"
-                colorScheme="brand"
-                onClick={() => submitFeedback(message.id)}
-              >
-                Submit
-              </Button>
+              <Button size="xs" variant="ghost" onClick={() => {
+                setMessages(prev => prev.map(msg => {
+                  if (msg.id === message.id && msg.feedback) {
+                    return { ...msg, feedback: { ...msg.feedback, showCommentBox: false, rating: null, comment: '' } };
+                  }
+                  return msg;
+                }));
+              }}>Cancel</Button>
+              <Button size="xs" colorScheme="brand" onClick={() => submitFeedback(message.id)}>Submit</Button>
             </HStack>
           </Box>
         </Collapse>
 
         {submitted && comment && (
-          <Text fontSize="xs" color="gray.400" mt={1} fontStyle="italic">
-            "{comment}"
-          </Text>
+          <Text fontSize="xs" color="gray.400" mt={1} fontStyle="italic">"{comment}"</Text>
         )}
       </Box>
     );
+  };
+
+  // Format date for session display
+  const formatSessionDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
   };
 
   return (
@@ -408,14 +549,128 @@ const ChatInterface: React.FC = () => {
       boxShadow="lg"
     >
       {/* Chat Header */}
-      <Box 
-        p={4} 
-        borderBottomWidth={1} 
-        bg="brand.600" 
-        color="white"
-      >
-        <Heading size="md">Course Selection Assistant</Heading>
+      <Box p={4} borderBottomWidth={1} bg="brand.600" color="white">
+        <Flex justify="space-between" align="center">
+          <Heading size="md">Course Selection Assistant</Heading>
+          <HStack spacing={2}>
+            <Tooltip label="New Chat" placement="bottom" hasArrow>
+              <IconButton
+                aria-label="New chat"
+                icon={<span style={{ fontSize: '18px' }}>✏️</span>}
+                size="sm"
+                variant="ghost"
+                color="white"
+                _hover={{ bg: 'brand.700' }}
+                onClick={startNewChat}
+              />
+            </Tooltip>
+            <Tooltip label="Chat History" placement="bottom" hasArrow>
+              <IconButton
+                aria-label="Chat history"
+                icon={<span style={{ fontSize: '18px' }}>📋</span>}
+                size="sm"
+                variant="ghost"
+                color="white"
+                _hover={{ bg: 'brand.700' }}
+                onClick={onOpen}
+              />
+            </Tooltip>
+            {chatSessions.length > 0 && (
+              <Badge colorScheme="whiteAlpha" variant="solid" fontSize="xs" borderRadius="full">
+                {chatSessions.length}
+              </Badge>
+            )}
+          </HStack>
+        </Flex>
       </Box>
+
+      {/* Chat History Drawer */}
+      <Drawer isOpen={isOpen} placement="left" onClose={onClose} size="sm">
+        <DrawerOverlay />
+        <DrawerContent>
+          <DrawerCloseButton />
+          <DrawerHeader borderBottomWidth={1}>
+            <Flex justify="space-between" align="center" pr={8}>
+              <Text>Chat History</Text>
+              <Button size="sm" colorScheme="brand" onClick={startNewChat}>
+                + New Chat
+              </Button>
+            </Flex>
+          </DrawerHeader>
+          <DrawerBody p={0}>
+            {chatSessions.length === 0 ? (
+              <Center p={8}>
+                <VStack spacing={2}>
+                  <Text fontSize="lg">💬</Text>
+                  <Text color="gray.500" textAlign="center" fontSize="sm">
+                    No previous chats yet. Start a conversation!
+                  </Text>
+                </VStack>
+              </Center>
+            ) : (
+              <VStack spacing={0} align="stretch">
+                {chatSessions
+                  .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+                  .map((session) => {
+                    const messageCount = session.messages.filter(m => m.sender === 'user').length;
+                    const isActive = session.id === activeSessionId;
+
+                    return (
+                      <Box
+                        key={session.id}
+                        px={4}
+                        py={3}
+                        cursor="pointer"
+                        bg={isActive ? activeSessionBg : 'transparent'}
+                        _hover={{ bg: isActive ? activeSessionBg : sidebarHoverBg }}
+                        onClick={() => loadSession(session)}
+                        borderBottomWidth={1}
+                        borderColor="gray.100"
+                        position="relative"
+                      >
+                        <Flex justify="space-between" align="flex-start">
+                          <Box flex={1} mr={2} overflow="hidden">
+                            <Text
+                              fontSize="sm"
+                              fontWeight={isActive ? 'bold' : 'medium'}
+                              noOfLines={1}
+                              color={isActive ? 'brand.700' : 'gray.800'}
+                            >
+                              {session.title}
+                            </Text>
+                            <HStack spacing={2} mt={1}>
+                              <Text fontSize="xs" color="gray.500">
+                                {formatSessionDate(session.updatedAt)}
+                              </Text>
+                              <Text fontSize="xs" color="gray.400">
+                                •
+                              </Text>
+                              <Text fontSize="xs" color="gray.500">
+                                {messageCount} {messageCount === 1 ? 'message' : 'messages'}
+                              </Text>
+                            </HStack>
+                          </Box>
+                          <Tooltip label="Delete chat" placement="top" hasArrow>
+                            <IconButton
+                              aria-label="Delete chat"
+                              icon={<span style={{ fontSize: '14px' }}>🗑️</span>}
+                              size="xs"
+                              variant="ghost"
+                              colorScheme="red"
+                              onClick={(e) => deleteSession(session.id, e)}
+                              opacity={0.5}
+                              _hover={{ opacity: 1 }}
+                            />
+                          </Tooltip>
+                        </Flex>
+                      </Box>
+                    );
+                  })}
+              </VStack>
+            )}
+          </DrawerBody>
+        </DrawerContent>
+      </Drawer>
 
       {/* Messages Area */}
       {!isInitialized ? (
@@ -430,14 +685,7 @@ const ChatInterface: React.FC = () => {
           <VStack spacing={4} width="80%">
             <Spinner size="md" color="brand.500" thickness="3px" />
             <Text color="gray.700" fontWeight="medium">Generating AI embeddings for better search results...</Text>
-            <Progress 
-              value={embeddingsStatus.progress} 
-              size="sm" 
-              width="100%" 
-              colorScheme="brand" 
-              hasStripe
-              isAnimated
-            />
+            <Progress value={embeddingsStatus.progress} size="sm" width="100%" colorScheme="brand" hasStripe isAnimated />
             <Text color="gray.500" fontSize="sm">
               {embeddingsStatus.progress}% complete ({embeddingsStatus.vectorCount} vectors generated)
             </Text>
@@ -447,19 +695,9 @@ const ChatInterface: React.FC = () => {
           </VStack>
         </Center>
       ) : (
-        <VStack
-          flex={1}
-          overflowY="auto"
-          p={4}
-          spacing={4}
-          align="stretch"
-          bg={chatBg}
-        >
+        <VStack flex={1} overflowY="auto" p={4} spacing={4} align="stretch" bg={chatBg}>
           {messages.map(message => (
-            <Flex
-              key={message.id}
-              justify={message.sender === 'user' ? 'flex-end' : 'flex-start'}
-            >
+            <Flex key={message.id} justify={message.sender === 'user' ? 'flex-end' : 'flex-start'}>
               <Box
                 maxW={{ base: "85%", md: "70%" }}
                 bg={message.sender === 'user' ? userBubbleBg : botBubbleBg}
@@ -485,8 +723,6 @@ const ChatInterface: React.FC = () => {
                 >
                   {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </Text>
-                
-                {/* Feedback section for bot messages (not for welcome message) */}
                 {message.sender === 'bot' && message.id !== 'welcome' && (
                   <FeedbackSection message={message} />
                 )}
