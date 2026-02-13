@@ -102,7 +102,7 @@ const Home: React.FC = () => {
               </Box>
               
               <HStack spacing={4}>
-                <Badge colorScheme="green" p={2} borderRadius="md" fontSize="sm">
+                <Badge colorScheme="accent" p={2} borderRadius="md" fontSize="sm">
                   2026-2027 Catalog
                 </Badge>
                 <PDFViewer pdfUrl="/api/pdf" />
