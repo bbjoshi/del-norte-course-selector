@@ -65,7 +65,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ pdfUrl }) => {
             borderTopRadius="xl"
             py={4}
           >
-            Del Norte High School Course Catalog (2025-2026)
+            Del Norte High School Course Catalog (2026-2027)
           </ModalHeader>
           <ModalCloseButton color="white" />
           <ModalBody p={0}>

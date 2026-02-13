@@ -103,9 +103,9 @@ const Home: React.FC = () => {
               
               <HStack spacing={4}>
                 <Badge colorScheme="green" p={2} borderRadius="md" fontSize="sm">
-                  2025-2026 Catalog
+                  2026-2027 Catalog
                 </Badge>
-                <PDFViewer pdfUrl="https://4.files.edl.io/f7e7/02/04/25/231513-8c9f8c2e-257a-49e3-8c4c-ef249811b38e.pdf" />
+                <PDFViewer pdfUrl="/api/pdf" />
               </HStack>
             </Flex>
           </Box>
