@@ -140,54 +140,57 @@ app.use('/api/admin', adminRoutes);
 // PDF proxy endpoint
 app.get('/api/pdf', async (req, res) => {
   try {
-    console.log('Fetching PDF...');
+    console.log('Serving PDF...');
+    
+    // Try to serve local catalog first
+    const localPaths = [
+      path.join(__dirname, '..', 'current-catalog.pdf'),
+      path.join(__dirname, '..', 'references', 'Course Catalog 2026-2027 (updated 2026-01-29).pdf'),
+    ];
+    
+    // Also scan references folder for any catalog PDF
+    const referencesDir = path.join(__dirname, '..', 'references');
+    if (fs.existsSync(referencesDir)) {
+      const refFiles = fs.readdirSync(referencesDir).filter(f => f.toLowerCase().includes('catalog') && f.toLowerCase().endsWith('.pdf'));
+      refFiles.forEach(f => localPaths.push(path.join(referencesDir, f)));
+    }
+    
+    for (const localPath of localPaths) {
+      if (fs.existsSync(localPath)) {
+        console.log(`Serving local PDF: ${localPath}`);
+        const pdfBuffer = fs.readFileSync(localPath);
+        res.setHeader('Content-Type', 'application/pdf');
+        return res.send(pdfBuffer);
+      }
+    }
+    
+    // Fall back to fetching from external URL
     const pdfUrl = process.env.PDF_URL || 'https://4.files.edl.io/f7e7/02/04/25/231513-8c9f8c2e-257a-49e3-8c4c-ef249811b38e.pdf';
+    console.log(`No local PDF found. Fetching from URL: ${pdfUrl}`);
     
-    console.log(`Attempting to fetch PDF from URL: ${pdfUrl}`);
-    
-    // Add timeout to prevent hanging requests
     const response = await axios.get(pdfUrl, {
       responseType: 'arraybuffer',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
       },
-      timeout: 30000 // 30 second timeout
+      timeout: 30000
     });
     
     console.log('PDF fetched successfully');
     
-    // Verify we have valid PDF data
     if (!response.data || response.data.length === 0) {
       throw new Error('Received empty PDF data');
-    }
-    
-    // Process PDF for vector database
-    // Use a try/catch to prevent processing errors from affecting the response
-    try {
-      // Start processing in the background
-      processPDFForVectorDB(response.data).then(success => {
-        console.log(`PDF processing for vector search ${success ? 'completed' : 'failed'}`);
-      }).catch(err => {
-        console.error('Background PDF processing error:', err);
-        embeddingsGenerationError = err.message;
-        embeddingsGenerationInProgress = false;
-      });
-    } catch (processingError) {
-      console.error('Error starting PDF processing:', processingError);
-      embeddingsGenerationError = processingError.message;
-      embeddingsGenerationInProgress = false;
-      // Continue with the response even if background processing fails
     }
     
     res.setHeader('Content-Type', 'application/pdf');
     res.send(response.data);
   } catch (error) {
-    console.error('Error fetching PDF:', error.message);
+    console.error('Error serving PDF:', error.message);
     if (error.response) {
       console.error('Response status:', error.response.status);
       console.error('Response headers:', error.response.headers);
     }
-    res.status(500).json({ error: 'Failed to fetch PDF', details: error.message });
+    res.status(500).json({ error: 'Failed to serve PDF', details: error.message });
   }
 });
 
@@ -873,7 +876,7 @@ async function initializeVectorDatabase() {
         name: 'Course Catalog'
       });
     } else {
-      const defaultCatalogPath = path.join(__dirname, '..', 'Del Norte Course Catalog 2025-2026.pdf');
+      const defaultCatalogPath = path.join(__dirname, '..', 'Course Catalog 2026-2027 (updated 2026-01-29).pdf');
       if (fs.existsSync(defaultCatalogPath)) {
         console.log('Found default Course Catalog PDF');
         documentsToProcess.push({
