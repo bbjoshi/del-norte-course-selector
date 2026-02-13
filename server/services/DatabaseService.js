@@ -201,7 +201,7 @@ class DatabaseService {
       const title = text.length > 50 ? text.slice(0, 50) + '...' : text;
       // Only update title if this is the first user message
       const existingUserMsg = this.db.prepare(
-        'SELECT COUNT(*) as count FROM chat_messages WHERE session_id = ? AND sender = "user"'
+        "SELECT COUNT(*) as count FROM chat_messages WHERE session_id = ? AND sender = 'user'"
       ).get(sessionId);
       
       if (existingUserMsg.count <= 1) {
