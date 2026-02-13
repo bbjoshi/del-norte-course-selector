@@ -297,7 +297,7 @@ const ChatInterface: React.FC = () => {
     initializePDF();
   }, [pdfService, toast, loadSessions, loadSessionMessages]);
 
-  useEffect(() => { scrollToBottom(); }, [messages]);
+  useEffect(() => { scrollToBottom(); }, [messages, isLoading]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -486,6 +486,16 @@ const ChatInterface: React.FC = () => {
               </Box>
             </Flex>
           ))}
+          {isLoading && (
+            <Flex justify="flex-start">
+              <Box maxW={{ base: "85%", md: "70%" }} bg={botBubbleBg} p={4} borderRadius="lg" boxShadow="md" borderWidth={1} borderColor={botBubbleBorder}>
+                <HStack spacing={2}>
+                  <Spinner size="sm" color="brand.500" speed="0.8s" />
+                  <Text color="gray.500" fontStyle="italic">Thinking...</Text>
+                </HStack>
+              </Box>
+            </Flex>
+          )}
           <div ref={messagesEndRef} />
         </VStack>
       )}
@@ -497,7 +507,7 @@ const ChatInterface: React.FC = () => {
           <InputGroup size="lg">
             <Input value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} placeholder="Ask about courses, requirements, or recommendations..." disabled={isLoading || !isInitialized} pr="4.5rem" focusBorderColor="brand.500" borderRadius="md" boxShadow="sm" _hover={{ borderColor: 'brand.300' }} />
             <InputRightElement width="4.5rem">
-              <Button h="1.75rem" size="sm" type="submit" colorScheme="brand" isLoading={isLoading} loadingText="Sending" disabled={!isInitialized || !inputMessage.trim()} borderRadius="md">Send</Button>
+              <Button h="1.75rem" size="sm" type="submit" colorScheme="brand" disabled={isLoading || !isInitialized || !inputMessage.trim()} borderRadius="md">Send</Button>
             </InputRightElement>
           </InputGroup>
         </form>
