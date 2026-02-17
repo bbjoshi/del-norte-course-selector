@@ -78,10 +78,39 @@ class DatabaseService {
         timestamp TEXT DEFAULT (datetime('now'))
       );
 
+      -- Analytics events table
+      CREATE TABLE IF NOT EXISTS analytics_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT NOT NULL,
+        user_id TEXT,
+        user_email TEXT,
+        session_id TEXT,
+        metadata TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+
+      -- User sessions tracking table
+      CREATE TABLE IF NOT EXISTS user_sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        user_email TEXT,
+        started_at TEXT NOT NULL,
+        last_active_at TEXT NOT NULL,
+        ended_at TEXT,
+        duration_seconds INTEGER DEFAULT 0,
+        questions_asked INTEGER DEFAULT 0,
+        answers_received INTEGER DEFAULT 0
+      );
+
       -- Index for faster lookups
       CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id);
       CREATE INDEX IF NOT EXISTS idx_vectors_doc_type ON vectors(document_type);
       CREATE INDEX IF NOT EXISTS idx_feedback_rating ON feedback(rating);
+      CREATE INDEX IF NOT EXISTS idx_analytics_events_type ON analytics_events(event_type);
+      CREATE INDEX IF NOT EXISTS idx_analytics_events_created ON analytics_events(created_at);
+      CREATE INDEX IF NOT EXISTS idx_analytics_events_user ON analytics_events(user_id);
+      CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);
+      CREATE INDEX IF NOT EXISTS idx_user_sessions_started ON user_sessions(started_at);
     `);
   }
 
@@ -251,6 +280,226 @@ class DatabaseService {
       FROM feedback
     `).get();
     return stats;
+  }
+
+  // === ANALYTICS ===
+
+  trackEvent(eventData) {
+    const { eventType, userId, userEmail, sessionId, metadata } = eventData;
+    this.db.prepare(
+      `INSERT INTO analytics_events (event_type, user_id, user_email, session_id, metadata, created_at)
+       VALUES (?, ?, ?, ?, ?, datetime('now'))`
+    ).run(eventType, userId || null, userEmail || null, sessionId || null, metadata ? JSON.stringify(metadata) : null);
+  }
+
+  // Start or update a user session
+  startUserSession(sessionData) {
+    const { id, userId, userEmail } = sessionData;
+    const now = new Date().toISOString();
+    this.db.prepare(
+      `INSERT OR IGNORE INTO user_sessions (id, user_id, user_email, started_at, last_active_at, duration_seconds, questions_asked, answers_received)
+       VALUES (?, ?, ?, ?, ?, 0, 0, 0)`
+    ).run(id, userId, userEmail || null, now, now);
+  }
+
+  updateUserSessionActivity(sessionId) {
+    const session = this.db.prepare('SELECT started_at FROM user_sessions WHERE id = ?').get(sessionId);
+    if (session) {
+      const now = new Date();
+      const started = new Date(session.started_at);
+      const durationSeconds = Math.floor((now.getTime() - started.getTime()) / 1000);
+      this.db.prepare(
+        `UPDATE user_sessions SET last_active_at = ?, duration_seconds = ? WHERE id = ?`
+      ).run(now.toISOString(), durationSeconds, sessionId);
+    }
+  }
+
+  endUserSession(sessionId) {
+    const session = this.db.prepare('SELECT started_at FROM user_sessions WHERE id = ?').get(sessionId);
+    if (session) {
+      const now = new Date();
+      const started = new Date(session.started_at);
+      const durationSeconds = Math.floor((now.getTime() - started.getTime()) / 1000);
+      this.db.prepare(
+        `UPDATE user_sessions SET ended_at = ?, last_active_at = ?, duration_seconds = ? WHERE id = ?`
+      ).run(now.toISOString(), now.toISOString(), durationSeconds, sessionId);
+    }
+  }
+
+  incrementSessionQuestions(sessionId) {
+    this.db.prepare(
+      `UPDATE user_sessions SET questions_asked = questions_asked + 1, last_active_at = datetime('now') WHERE id = ?`
+    ).run(sessionId);
+  }
+
+  incrementSessionAnswers(sessionId) {
+    this.db.prepare(
+      `UPDATE user_sessions SET answers_received = answers_received + 1, last_active_at = datetime('now') WHERE id = ?`
+    ).run(sessionId);
+  }
+
+  // === ANALYTICS AGGREGATIONS ===
+
+  getAnalyticsSummary() {
+    // Total unique users (accounts)
+    const totalAccounts = this.db.prepare(
+      `SELECT COUNT(DISTINCT user_id) as count FROM analytics_events WHERE event_type = 'account_created'`
+    ).get();
+
+    // Signups over time (daily for last 30 days)
+    const signupsByDay = this.db.prepare(`
+      SELECT date(created_at) as day, COUNT(*) as count
+      FROM analytics_events
+      WHERE event_type = 'account_created'
+        AND created_at >= datetime('now', '-30 days')
+      GROUP BY date(created_at)
+      ORDER BY day ASC
+    `).all();
+
+    // Total questions and answers
+    const totalQuestions = this.db.prepare(
+      `SELECT COUNT(*) as count FROM chat_messages WHERE sender = 'user'`
+    ).get();
+    const totalAnswers = this.db.prepare(
+      `SELECT COUNT(*) as count FROM chat_messages WHERE sender = 'bot'`
+    ).get();
+
+    // Questions per day (last 30 days)
+    const questionsByDay = this.db.prepare(`
+      SELECT date(timestamp) as day, COUNT(*) as count
+      FROM chat_messages
+      WHERE sender = 'user'
+        AND timestamp >= datetime('now', '-30 days')
+      GROUP BY date(timestamp)
+      ORDER BY day ASC
+    `).all();
+
+    // Total chat sessions and messages
+    const totalChatSessions = this.db.prepare(
+      `SELECT COUNT(*) as count FROM chat_sessions`
+    ).get();
+
+    // User session metrics
+    const sessionStats = this.db.prepare(`
+      SELECT 
+        COUNT(*) as total_sessions,
+        ROUND(AVG(duration_seconds), 0) as avg_duration_seconds,
+        MAX(duration_seconds) as max_duration_seconds,
+        ROUND(AVG(questions_asked), 1) as avg_questions_per_session,
+        SUM(questions_asked) as total_questions_tracked,
+        SUM(answers_received) as total_answers_tracked
+      FROM user_sessions
+    `).get();
+
+    // Active users today
+    const activeToday = this.db.prepare(`
+      SELECT COUNT(DISTINCT user_id) as count
+      FROM analytics_events
+      WHERE created_at >= datetime('now', 'start of day')
+        AND user_id IS NOT NULL
+    `).get();
+
+    // Active users this week
+    const activeThisWeek = this.db.prepare(`
+      SELECT COUNT(DISTINCT user_id) as count
+      FROM analytics_events
+      WHERE created_at >= datetime('now', '-7 days')
+        AND user_id IS NOT NULL
+    `).get();
+
+    // Active users this month
+    const activeThisMonth = this.db.prepare(`
+      SELECT COUNT(DISTINCT user_id) as count
+      FROM analytics_events
+      WHERE created_at >= datetime('now', '-30 days')
+        AND user_id IS NOT NULL
+    `).get();
+
+    // Login count
+    const totalLogins = this.db.prepare(
+      `SELECT COUNT(*) as count FROM analytics_events WHERE event_type = 'login'`
+    ).get();
+
+    // Unique users who asked questions
+    const uniqueQuestionUsers = this.db.prepare(
+      `SELECT COUNT(DISTINCT user_id) as count FROM analytics_events WHERE event_type = 'question_asked' AND user_id IS NOT NULL`
+    ).get();
+
+    // Feedback stats
+    const feedbackStats = this.getFeedbackStats();
+
+    // Recent events
+    const recentEvents = this.db.prepare(`
+      SELECT * FROM analytics_events
+      ORDER BY created_at DESC
+      LIMIT 50
+    `).all().map(e => ({
+      ...e,
+      metadata: e.metadata ? JSON.parse(e.metadata) : null
+    }));
+
+    // Session duration distribution
+    const sessionDurationDistribution = this.db.prepare(`
+      SELECT
+        CASE
+          WHEN duration_seconds < 60 THEN '< 1 min'
+          WHEN duration_seconds < 300 THEN '1-5 min'
+          WHEN duration_seconds < 900 THEN '5-15 min'
+          WHEN duration_seconds < 1800 THEN '15-30 min'
+          ELSE '30+ min'
+        END as duration_bucket,
+        COUNT(*) as count
+      FROM user_sessions
+      WHERE duration_seconds > 0
+      GROUP BY duration_bucket
+      ORDER BY MIN(duration_seconds)
+    `).all();
+
+    // Top users by questions
+    const topUsersByQuestions = this.db.prepare(`
+      SELECT user_email, user_id, COUNT(*) as question_count
+      FROM analytics_events
+      WHERE event_type = 'question_asked' AND user_email IS NOT NULL
+      GROUP BY user_id
+      ORDER BY question_count DESC
+      LIMIT 10
+    `).all();
+
+    return {
+      accounts: {
+        total: totalAccounts.count,
+        signupsByDay,
+      },
+      questions: {
+        total: totalQuestions.count,
+        byDay: questionsByDay,
+        uniqueUsers: uniqueQuestionUsers.count,
+      },
+      answers: {
+        total: totalAnswers.count,
+      },
+      chatSessions: {
+        total: totalChatSessions.count,
+      },
+      userSessions: {
+        total: sessionStats.total_sessions,
+        avgDurationSeconds: sessionStats.avg_duration_seconds || 0,
+        maxDurationSeconds: sessionStats.max_duration_seconds || 0,
+        avgQuestionsPerSession: sessionStats.avg_questions_per_session || 0,
+        durationDistribution: sessionDurationDistribution,
+      },
+      activeUsers: {
+        today: activeToday.count,
+        thisWeek: activeThisWeek.count,
+        thisMonth: activeThisMonth.count,
+      },
+      logins: {
+        total: totalLogins.count,
+      },
+      feedback: feedbackStats,
+      topUsersByQuestions,
+      recentEvents,
+    };
   }
 
   // === UTILITY ===

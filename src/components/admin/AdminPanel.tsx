@@ -28,6 +28,7 @@ import { FiUpload, FiRefreshCw, FiCheckCircle, FiAlertCircle } from 'react-icons
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import AnalyticsDashboard from './AnalyticsDashboard';
 
 interface UploadStatus {
   uploading: boolean;
@@ -403,6 +404,11 @@ const AdminPanel: React.FC = () => {
             </VStack>
           </CardBody>
         </Card>
+
+        <Divider />
+
+        {/* Usage Analytics Dashboard */}
+        <AnalyticsDashboard />
       </VStack>
     </Container>
   );

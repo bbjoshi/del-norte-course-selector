@@ -136,6 +136,313 @@ app.use(express.static(path.join(__dirname, '..', 'build')));
 const adminRoutes = require('./routes/admin');
 app.use('/api/admin', adminRoutes);
 
+// === DOCUMENT UPLOAD ENDPOINT (PDF, images, any document) ===
+const multerUpload = require('multer');
+const Tesseract = require('tesseract.js');
+
+const documentUpload = multerUpload({
+  storage: multerUpload.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB limit
+  fileFilter: (req, file, cb) => {
+    const allowedMimes = [
+      'application/pdf',
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'image/tiff',
+      'image/bmp',
+      'image/gif',
+    ];
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Unsupported file type. Please upload a PDF or image (JPEG, PNG, WEBP, TIFF).'));
+    }
+  }
+});
+
+// Helper: detect what kind of document was uploaded based on text content
+function detectDocumentType(text) {
+  const lower = text.toLowerCase();
+  
+  // Transcript indicators
+  const transcriptKeywords = ['transcript', 'gpa', 'cumulative', 'semester', 'grade point', 'credits earned', 'credits attempted', 'course history', 'academic record', 'mark', 'units'];
+  const transcriptScore = transcriptKeywords.filter(k => lower.includes(k)).length;
+  
+  // Report card indicators
+  const reportCardKeywords = ['report card', 'quarter', 'marking period', 'attendance', 'teacher comments', 'conduct', 'effort'];
+  const reportCardScore = reportCardKeywords.filter(k => lower.includes(k)).length;
+  
+  // Schedule indicators
+  const scheduleKeywords = ['schedule', 'period 1', 'period 2', 'period 3', 'room', 'teacher', 'bell schedule'];
+  const scheduleScore = scheduleKeywords.filter(k => lower.includes(k)).length;
+  
+  // Test score indicators
+  const testKeywords = ['sat', 'act', 'ap exam', 'psat', 'test score', 'college board', 'composite score'];
+  const testScore = testKeywords.filter(k => lower.includes(k)).length;
+  
+  // Course plan indicators
+  const planKeywords = ['course request', 'course selection', 'next year', 'elective', 'a-g requirements'];
+  const planScore = planKeywords.filter(k => lower.includes(k)).length;
+
+  const scores = [
+    { type: 'transcript', score: transcriptScore, label: 'Academic Transcript' },
+    { type: 'report_card', score: reportCardScore, label: 'Report Card' },
+    { type: 'schedule', score: scheduleScore, label: 'Class Schedule' },
+    { type: 'test_scores', score: testScore, label: 'Test Scores' },
+    { type: 'course_plan', score: planScore, label: 'Course Plan/Request' },
+  ];
+  
+  const best = scores.sort((a, b) => b.score - a.score)[0];
+  if (best.score >= 2) {
+    return { type: best.type, label: best.label, confidence: 'high' };
+  } else if (best.score >= 1) {
+    return { type: best.type, label: best.label, confidence: 'medium' };
+  }
+  return { type: 'document', label: 'Uploaded Document', confidence: 'low' };
+}
+
+// Helper: extract text from an image using Claude Vision API (much better than Tesseract for documents)
+async function extractTextFromImage(imageBuffer, mimetype) {
+  const openRouterApiKey = process.env.REACT_APP_OPENROUTER_API_KEY;
+  
+  if (openRouterApiKey) {
+    // Use Claude Vision for high-quality OCR
+    console.log('Using Claude Vision API for document text extraction...');
+    try {
+      const base64Image = imageBuffer.toString('base64');
+      const mediaType = mimetype || 'image/jpeg';
+      
+      const response = await axios.post(
+        'https://openrouter.ai/api/v1/chat/completions',
+        {
+          model: 'anthropic/claude-3.5-sonnet',
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: `data:${mediaType};base64,${base64Image}`,
+                  },
+                },
+                {
+                  type: 'text',
+                  text: `Please extract ALL text from this document image exactly as it appears. This is likely an academic document (transcript, report card, schedule, or similar). 
+
+IMPORTANT: 
+- Transcribe every piece of text you can see, including headers, labels, dates, grades, course names, credits, GPA, etc.
+- Preserve the structure/layout as much as possible using line breaks and spacing
+- If it's a table, preserve the column alignment
+- Do NOT summarize or interpret - just extract the raw text faithfully
+- Include numbers, codes, and abbreviations exactly as shown
+- If text is partially visible or unclear, include your best reading with [unclear] notation
+
+Output ONLY the extracted text, no commentary.`
+                },
+              ],
+            },
+          ],
+          max_tokens: 4000,
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${openRouterApiKey}`,
+            'HTTP-Referer': 'https://del-norte-course-selector.vercel.app',
+            'X-Title': 'Del Norte Course Selector - Document OCR',
+          },
+          timeout: 60000,
+        }
+      );
+
+      const extractedText = response.data.choices?.[0]?.message?.content || '';
+      console.log(`Claude Vision extracted ${extractedText.length} characters`);
+      
+      if (extractedText.length > 20) {
+        return { text: extractedText, confidence: 95 }; // Claude Vision is highly accurate
+      }
+    } catch (visionErr) {
+      console.warn('Claude Vision failed, falling back to Tesseract:', visionErr.message);
+    }
+  }
+
+  // Fallback to Tesseract OCR
+  console.log('Falling back to Tesseract OCR...');
+  const { data: { text, confidence } } = await Tesseract.recognize(imageBuffer, 'eng', {
+    logger: (m) => {
+      if (m.status === 'recognizing text') {
+        console.log(`OCR progress: ${Math.round(m.progress * 100)}%`);
+      }
+    }
+  });
+  console.log(`Tesseract OCR complete. Confidence: ${confidence}%, Text length: ${text.length}`);
+  return { text, confidence };
+}
+
+app.post('/api/document/upload', documentUpload.single('document'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const { originalname, mimetype, size, buffer } = req.file;
+    console.log(`Document uploaded: ${originalname} (${(size / 1024).toFixed(1)} KB, type: ${mimetype})`);
+
+    let extractedText = '';
+    let extractionMethod = '';
+    let ocrConfidence = null;
+
+    if (mimetype === 'application/pdf') {
+      // Try text extraction from PDF first
+      extractionMethod = 'pdf-text';
+      try {
+        const parser = new pdfParse({ data: buffer });
+        const pdfData = await parser.getText();
+        extractedText = pdfData.text || '';
+      } catch (pdfErr) {
+        console.warn('PDF text extraction failed, will try OCR:', pdfErr.message);
+      }
+
+      // If PDF has little/no text, it's likely a scanned/image-based PDF
+      if (extractedText.trim().length < 50) {
+        console.log('PDF appears to be image-based (little extractable text). OCR cannot process PDFs directly.');
+        return res.status(400).json({
+          error: 'This PDF appears to be a scanned image and doesn\'t contain extractable text. Please take a photo or screenshot of the document and upload the image instead (JPEG, PNG).',
+          isScannedPdf: true,
+        });
+      }
+    } else {
+      // Image file — use Claude Vision or OCR
+      extractionMethod = 'image-ocr';
+      try {
+        const ocrResult = await extractTextFromImage(buffer, mimetype);
+        extractedText = ocrResult.text;
+        ocrConfidence = ocrResult.confidence;
+      } catch (ocrErr) {
+        console.error('OCR failed:', ocrErr.message);
+        return res.status(400).json({
+          error: 'Could not extract text from this image. Please try a clearer photo or screenshot.',
+          details: ocrErr.message,
+        });
+      }
+    }
+
+    if (!extractedText || extractedText.trim().length < 10) {
+      return res.status(400).json({
+        error: 'Could not extract meaningful text from the uploaded file. Try a clearer image or a different format.',
+      });
+    }
+
+    // Auto-detect document type
+    const docType = detectDocumentType(extractedText);
+    console.log(`Document type detected: ${docType.label} (confidence: ${docType.confidence})`);
+    console.log(`Text extracted via ${extractionMethod}: ${extractedText.length} characters`);
+
+    res.json({
+      success: true,
+      text: extractedText,
+      filename: originalname,
+      charCount: extractedText.length,
+      documentType: docType,
+      extractionMethod,
+      ocrConfidence,
+    });
+  } catch (error) {
+    console.error('Error processing document:', error);
+    res.status(500).json({ error: 'Failed to process uploaded document', details: error.message });
+  }
+});
+
+// Keep old endpoint for backward compatibility
+app.post('/api/transcript/upload', documentUpload.single('transcript'), async (req, res) => {
+  // Redirect to new endpoint logic
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+  // Re-attach file with correct field name and forward
+  req.file.fieldname = 'document';
+  const fakeRes = {
+    status: (code) => ({ json: (data) => res.status(code).json(data) }),
+    json: (data) => res.json(data),
+  };
+  // Just extract text from PDF for backward compat
+  try {
+    const parser = new pdfParse({ data: req.file.buffer });
+    const pdfData = await parser.getText();
+    const transcriptText = pdfData.text || '';
+    if (!transcriptText.trim()) {
+      return res.status(400).json({ error: 'Could not extract text from PDF.' });
+    }
+    res.json({ success: true, text: transcriptText, filename: req.file.originalname, charCount: transcriptText.length });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to process PDF', details: err.message });
+  }
+});
+
+// === ANALYTICS TRACKING ENDPOINTS ===
+
+// Track an analytics event (account creation, login, question, etc.)
+app.post('/api/analytics/track', (req, res) => {
+  try {
+    const { eventType, userId, userEmail, sessionId, metadata } = req.body;
+    if (!eventType) {
+      return res.status(400).json({ error: 'eventType is required' });
+    }
+    DatabaseService.trackEvent({ eventType, userId, userEmail, sessionId, metadata });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error tracking analytics event:', error);
+    res.status(500).json({ error: 'Failed to track event' });
+  }
+});
+
+// Start a user session
+app.post('/api/analytics/session/start', (req, res) => {
+  try {
+    const { sessionId, userId, userEmail } = req.body;
+    if (!sessionId || !userId) {
+      return res.status(400).json({ error: 'sessionId and userId are required' });
+    }
+    DatabaseService.startUserSession({ id: sessionId, userId, userEmail });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error starting user session:', error);
+    res.status(500).json({ error: 'Failed to start session' });
+  }
+});
+
+// Heartbeat / keep-alive for user session
+app.post('/api/analytics/session/heartbeat', (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    if (!sessionId) {
+      return res.status(400).json({ error: 'sessionId is required' });
+    }
+    DatabaseService.updateUserSessionActivity(sessionId);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error updating session heartbeat:', error);
+    res.status(500).json({ error: 'Failed to update session' });
+  }
+});
+
+// End a user session
+app.post('/api/analytics/session/end', (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    if (!sessionId) {
+      return res.status(400).json({ error: 'sessionId is required' });
+    }
+    DatabaseService.endUserSession(sessionId);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error ending user session:', error);
+    res.status(500).json({ error: 'Failed to end session' });
+  }
+});
+
 
 // PDF proxy endpoint
 app.get('/api/pdf', async (req, res) => {
@@ -457,6 +764,51 @@ All of these documents are available and searchable. The specific excerpts shown
     
     relevantInfo = documentInventory + '\n' + relevantInfo;
 
+    // Include student uploaded document if provided (transcript, report card, schedule, etc.)
+    const transcriptText = req.body.transcriptText || '';
+    const transcriptFilename = req.body.transcriptFilename || '';
+    let transcriptSection = '';
+    if (transcriptText) {
+      transcriptSection = `
+        === STUDENT'S UPLOADED DOCUMENT ===
+        The student has uploaded a personal document: "${transcriptFilename || 'document'}".
+        This may be a transcript, report card, class schedule, test scores, or other academic document.
+        
+        *** CRITICAL INSTRUCTIONS FOR USING THIS DOCUMENT ***
+        
+        STEP 1 - IDENTIFY COMPLETED COURSES:
+        - Carefully read the document and create a mental list of EVERY course the student has ALREADY taken or is CURRENTLY enrolled in
+        - Note the grades received and credits earned for each course
+        - Note the student's current grade level
+        
+        STEP 2 - NEVER RECOMMEND ALREADY-TAKEN COURSES:
+        - Do NOT recommend any course that appears on the student's transcript or document
+        - Do NOT recommend any course the student has already completed or is currently taking
+        - This is critical: if a student took "English 1" already, do NOT suggest "English 1" again
+        - If a student completed "Algebra 1", recommend "Geometry" or the next course in sequence, NOT "Algebra 1"
+        
+        STEP 3 - RECOMMEND NEXT-LEVEL COURSES:
+        - Only recommend courses that are the NEXT logical step based on completed prerequisites
+        - Follow prerequisite chains: if they finished Course A, recommend Course B (the next in sequence)
+        - Consider the student's grade level when recommending (don't suggest freshman courses to a junior)
+        - Match difficulty level to the student's demonstrated performance (strong grades = suggest honors/AP)
+        
+        STEP 4 - CHECK GRADUATION GAPS:
+        - Compare completed courses against graduation requirements
+        - Identify any missing required courses the student still needs
+        - Prioritize recommending courses that fill graduation requirement gaps
+        
+        STEP 5 - PERSONALIZE:
+        - Look at which subjects the student excels in (high grades) and suggest advanced courses in those areas
+        - If grades are lower in certain areas, suggest appropriate-level courses (not remedial unless needed)
+        - Consider UC/CSU A-G requirements if the student appears college-bound
+        
+        DOCUMENT CONTENT:
+        ${transcriptText.substring(0, 8000)}
+        ${transcriptText.length > 8000 ? '\n[... document truncated for context limits ...]' : ''}
+      `;
+    }
+
     // Prepare the system message with instructions and relevant info
     const systemMessage = {
       role: 'system',
@@ -519,7 +871,7 @@ All of these documents are available and searchable. The specific excerpts shown
 
         === AVAILABLE REFERENCE INFORMATION ===
         ${relevantInfo}
-        
+        ${transcriptSection}
         === REMINDERS ===
         - Maintain context from the conversation history
         - Reference previous questions and answers when appropriate to provide continuity

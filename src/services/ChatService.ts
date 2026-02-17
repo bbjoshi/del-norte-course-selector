@@ -22,6 +22,8 @@ export class ChatService {
   private readonly MAX_HISTORY_LENGTH = 20; // Maximum number of messages to keep in history
   private readonly SUMMARIZATION_THRESHOLD = 15; // Threshold to trigger summarization
   private summarizationInProgress = false;
+  private transcriptText: string | null = null;
+  private transcriptFilename: string | null = null;
 
   private constructor() {
     this.pdfService = PDFService.getInstance();
@@ -32,6 +34,33 @@ export class ChatService {
       ChatService.instance = new ChatService();
     }
     return ChatService.instance;
+  }
+
+  /**
+   * Set transcript text from an uploaded PDF
+   */
+  public setTranscript(text: string, filename: string): void {
+    this.transcriptText = text;
+    this.transcriptFilename = filename;
+  }
+
+  /**
+   * Clear uploaded transcript
+   */
+  public clearTranscript(): void {
+    this.transcriptText = null;
+    this.transcriptFilename = null;
+  }
+
+  /**
+   * Check if a transcript is loaded
+   */
+  public hasTranscript(): boolean {
+    return !!this.transcriptText;
+  }
+
+  public getTranscriptFilename(): string | null {
+    return this.transcriptFilename;
   }
 
   /**
@@ -138,7 +167,9 @@ export class ChatService {
         {
           model: 'anthropic/claude-3-opus:20240229',
           messages: this.conversationHistory,
-          relevantInfo: relevantInfo // Pass the relevant info separately
+          relevantInfo: relevantInfo, // Pass the relevant info separately
+          transcriptText: this.transcriptText || undefined, // Include transcript if uploaded
+          transcriptFilename: this.transcriptFilename || undefined,
         }
       );
 

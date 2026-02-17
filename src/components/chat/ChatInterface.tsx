@@ -33,6 +33,7 @@ import ReactMarkdown from 'react-markdown';
 import './ChatInterface.css';
 import { PDFService } from '../../services/PDFService';
 import { ChatService } from '../../services/ChatService';
+import { AnalyticsService } from '../../services/AnalyticsService';
 
 interface FeedbackState {
   rating: 'positive' | 'negative' | null;
@@ -88,6 +89,9 @@ const ChatInterface: React.FC = () => {
 
   const [pdfService] = useState(() => PDFService.getInstance());
   const [chatService] = useState(() => ChatService.getInstance());
+  const [uploadedDoc, setUploadedDoc] = useState<{ filename: string; type: string; label: string } | null>(null);
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+  const docInputRef = useRef<HTMLInputElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -246,6 +250,9 @@ const ChatInterface: React.FC = () => {
         return msg;
       }));
 
+      // Track feedback
+      AnalyticsService.trackFeedbackSubmitted(message.feedback.rating, !!message.feedback.comment);
+
       toast({ title: 'Thank you!', description: 'Your feedback has been recorded.', status: 'success', duration: 2000, isClosable: true });
     } catch (error) {
       console.error('Error submitting feedback:', error);
@@ -299,6 +306,71 @@ const ChatInterface: React.FC = () => {
 
   useEffect(() => { scrollToBottom(); }, [messages, isLoading]);
 
+  // Handle document upload (PDF, images, etc.)
+  const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/tiff', 'image/bmp', 'image/gif'];
+    if (!allowedTypes.includes(file.type)) {
+      toast({ title: 'Unsupported file', description: 'Please upload a PDF or image (JPEG, PNG, WEBP, TIFF).', status: 'warning', duration: 3000, isClosable: true });
+      return;
+    }
+
+    const isImage = file.type.startsWith('image/');
+    setIsUploadingDoc(true);
+    if (isImage) {
+      toast({ title: 'Processing image...', description: 'Running OCR to extract text. This may take a moment.', status: 'info', duration: 8000, isClosable: true });
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append('document', file);
+      const response = await axios.post('/api/document/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000, // 2 min timeout for OCR
+      });
+
+      if (response.data.success) {
+        const { text, filename, charCount, documentType, extractionMethod, ocrConfidence } = response.data;
+        chatService.setTranscript(text, filename);
+        setUploadedDoc({ filename, type: documentType.type, label: documentType.label });
+
+        let desc = `Detected as "${documentType.label}". ${charCount} characters extracted.`;
+        if (extractionMethod.includes('ocr')) {
+          desc += ` (OCR confidence: ${Math.round(ocrConfidence || 0)}%)`;
+        }
+
+        toast({
+          title: `${documentType.label} uploaded!`,
+          description: desc,
+          status: 'success',
+          duration: 6000,
+          isClosable: true,
+        });
+      }
+    } catch (err: any) {
+      console.error('Document upload failed:', err);
+      const isScannedPdf = err.response?.data?.isScannedPdf;
+      toast({
+        title: isScannedPdf ? 'Scanned PDF detected' : 'Upload failed',
+        description: err.response?.data?.error || 'Could not process the file. Try a different format or clearer image.',
+        status: isScannedPdf ? 'warning' : 'error',
+        duration: isScannedPdf ? 8000 : 5000,
+        isClosable: true,
+      });
+    } finally {
+      setIsUploadingDoc(false);
+      if (docInputRef.current) docInputRef.current.value = '';
+    }
+  };
+
+  const removeDocument = () => {
+    chatService.clearTranscript();
+    setUploadedDoc(null);
+    toast({ title: 'Document removed', status: 'info', duration: 2000, isClosable: true });
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputMessage.trim() || !isInitialized || !activeSessionId) return;
@@ -318,6 +390,9 @@ const ChatInterface: React.FC = () => {
     // Save user message to DB
     await saveMessageToAPI(activeSessionId, userMessage);
 
+    // Track question asked
+    AnalyticsService.trackQuestionAsked(userQueryText, activeSessionId);
+
     // Refresh sessions list (in case this created a new session)
     loadSessions();
 
@@ -335,6 +410,10 @@ const ChatInterface: React.FC = () => {
 
       // Save bot message to DB
       await saveMessageToAPI(activeSessionId, botMessage);
+
+      // Track answer received
+      AnalyticsService.trackAnswerReceived(response.length, activeSessionId);
+      
       loadSessions();
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to get response from the chatbot', status: 'error', duration: 3000, isClosable: true });
@@ -503,13 +582,49 @@ const ChatInterface: React.FC = () => {
       {/* Input Area */}
       <Box p={4} borderTopWidth={1} bg="white">
         {embeddingsStatus.error && <Text color="orange.500" mb={2} fontSize="sm">Note: Advanced search is unavailable. Using traditional search instead.</Text>}
+
+        {/* Uploaded document indicator */}
+        {uploadedDoc && (
+          <HStack mb={2} p={2} bg="green.50" borderRadius="md" borderWidth={1} borderColor="green.200" spacing={2}>
+            <Text fontSize="sm">📄</Text>
+            <Text fontSize="sm" color="green.700" fontWeight="medium" flex={1} noOfLines={1}>
+              {uploadedDoc.label}: {uploadedDoc.filename}
+            </Text>
+            <Badge colorScheme="green" fontSize="xs">{uploadedDoc.label}</Badge>
+            <Tooltip label="Remove document" placement="top" hasArrow>
+              <IconButton aria-label="Remove document" icon={<span style={{ fontSize: '14px' }}>✕</span>} size="xs" variant="ghost" colorScheme="red" onClick={removeDocument} />
+            </Tooltip>
+          </HStack>
+        )}
+
         <form onSubmit={handleSendMessage}>
-          <InputGroup size="lg">
-            <Input value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} placeholder="Ask about courses, requirements, or recommendations..." disabled={isLoading || !isInitialized} pr="4.5rem" focusBorderColor="brand.500" borderRadius="md" boxShadow="sm" _hover={{ borderColor: 'brand.300' }} />
-            <InputRightElement width="4.5rem">
-              <Button h="1.75rem" size="sm" type="submit" colorScheme="brand" disabled={isLoading || !isInitialized || !inputMessage.trim()} borderRadius="md">Send</Button>
-            </InputRightElement>
-          </InputGroup>
+          <HStack spacing={2}>
+            {/* Hidden file input — accepts PDFs and images */}
+            <input
+              type="file"
+              accept="application/pdf,image/jpeg,image/png,image/webp,image/tiff,image/bmp,image/gif"
+              ref={docInputRef}
+              style={{ display: 'none' }}
+              onChange={handleDocUpload}
+            />
+            <Tooltip label={uploadedDoc ? 'Replace uploaded document' : 'Upload a document (transcript, report card, schedule — PDF or photo)'} placement="top" hasArrow>
+              <IconButton
+                aria-label="Upload document"
+                icon={isUploadingDoc ? <Spinner size="sm" /> : <span style={{ fontSize: '20px' }}>📎</span>}
+                size="lg"
+                variant="ghost"
+                colorScheme={uploadedDoc ? 'green' : 'gray'}
+                onClick={() => docInputRef.current?.click()}
+                isDisabled={isUploadingDoc || !isInitialized}
+              />
+            </Tooltip>
+            <InputGroup size="lg" flex={1}>
+              <Input value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} placeholder={uploadedDoc ? "Ask about your courses, what to take next..." : "Ask about courses, requirements, or recommendations..."} disabled={isLoading || !isInitialized} pr="4.5rem" focusBorderColor="brand.500" borderRadius="md" boxShadow="sm" _hover={{ borderColor: 'brand.300' }} />
+              <InputRightElement width="4.5rem">
+                <Button h="1.75rem" size="sm" type="submit" colorScheme="brand" disabled={isLoading || !isInitialized || !inputMessage.trim()} borderRadius="md">Send</Button>
+              </InputRightElement>
+            </InputGroup>
+          </HStack>
         </form>
       </Box>
     </Box>

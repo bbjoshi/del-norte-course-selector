@@ -10,6 +10,7 @@ import {
 } from '@firebase/auth';
 import { auth, db } from '../config/firebase';
 import { doc, setDoc, getDoc } from '@firebase/firestore';
+import { AnalyticsService } from '../services/AnalyticsService';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -75,6 +76,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { user } = await createUserWithEmailAndPassword(auth, email, password);
     console.log(`User created successfully with UID: ${user.uid}`);
     
+    // Track account creation
+    AnalyticsService.trackAccountCreated(user.uid, email);
+    
     if (db) {
       try {
         console.log(`Creating user document in Firestore for UID: ${user.uid}`);
@@ -97,7 +101,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!auth) {
       throw new Error('Firebase authentication is not available');
     }
-    await signInWithEmailAndPassword(auth, email, password);
+    const { user } = await signInWithEmailAndPassword(auth, email, password);
+    // Track login
+    AnalyticsService.trackLogin(user.uid, email, 'email');
   };
 
   const signInWithGoogle = async () => {
@@ -123,8 +129,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             createdAt: new Date().toISOString()
           });
           console.log('Google user document created successfully');
+          // Track as new account
+          AnalyticsService.trackAccountCreated(user.uid, user.email || '');
         } else {
           console.log('User document already exists for Google user');
+          // Track as login
+          AnalyticsService.trackLogin(user.uid, user.email || '', 'google');
         }
       } catch (error) {
         console.error('Error checking/creating user document:', error);
@@ -139,6 +149,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!auth) {
       throw new Error('Firebase authentication is not available');
     }
+    // Track logout and end session
+    await AnalyticsService.trackLogout();
     return signOut(auth);
   };
 
@@ -152,6 +164,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         if (user) {
           setCurrentUser(user);
+          
+          // Set user for analytics and start session tracking
+          AnalyticsService.setUser(user.uid, user.email);
+          AnalyticsService.startSession();
+          
           try {
             const adminStatus = await checkAdminStatus(user);
             setIsAdmin(adminStatus);
@@ -160,6 +177,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setIsAdmin(false);
           }
         } else {
+          // End session when user signs out
+          AnalyticsService.endSession();
+          AnalyticsService.clearUser();
           setCurrentUser(null);
           setIsAdmin(false);
         }

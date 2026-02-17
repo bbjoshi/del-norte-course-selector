@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const PDFService = require('../services/PDFService');
 const VectorSearchService = require('../services/VectorSearchService');
+const DatabaseService = require('../services/DatabaseService');
 
 // Configure multer for file upload
 const storage = multer.diskStorage({
@@ -192,6 +193,24 @@ router.get('/catalog-info', (req, res) => {
     res.status(500).json({ 
       success: false, 
       error: 'Failed to get catalog info',
+      details: error.message 
+    });
+  }
+});
+
+/**
+ * @route GET /api/admin/analytics
+ * @desc Get usage analytics summary
+ */
+router.get('/analytics', (req, res) => {
+  try {
+    const analytics = DatabaseService.getAnalyticsSummary();
+    res.json({ success: true, analytics });
+  } catch (error) {
+    console.error('Error fetching analytics:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to fetch analytics',
       details: error.message 
     });
   }
