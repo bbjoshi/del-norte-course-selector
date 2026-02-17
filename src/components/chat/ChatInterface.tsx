@@ -343,11 +343,29 @@ const ChatInterface: React.FC = () => {
 
         toast({
           title: `${documentType.label} uploaded!`,
-          description: desc,
+          description: desc + ' Running AI analysis...',
           status: 'success',
-          duration: 6000,
+          duration: 4000,
           isClosable: true,
         });
+
+        // Run the agentic analysis pipeline in the background
+        try {
+          const analysis = await chatService.runAnalysis();
+          if (analysis) {
+            const coursesFound = analysis.courses?.length || 0;
+            const gaps = analysis.gapAnalysis?.missingRequirements?.length || 0;
+            toast({
+              title: '📊 Analysis Complete!',
+              description: `Found ${coursesFound} courses. ${gaps > 0 ? `${gaps} graduation requirement gaps identified.` : 'On track for graduation!'} Ask me for personalized recommendations.`,
+              status: 'info',
+              duration: 8000,
+              isClosable: true,
+            });
+          }
+        } catch (analysisErr) {
+          console.warn('Analysis pipeline failed, will use raw text:', analysisErr);
+        }
       }
     } catch (err: any) {
       console.error('Document upload failed:', err);

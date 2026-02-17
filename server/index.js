@@ -13,6 +13,7 @@ const PDFService = require('./services/PDFService');
 const SearchService = require('./services/SearchService');
 const ChatService = require('./services/ChatService');
 const DatabaseService = require('./services/DatabaseService');
+const TranscriptAnalysisService = require('./services/TranscriptAnalysisService');
 
 // Flags to track embedding generation status
 let embeddingsGenerationInProgress = false;
@@ -378,6 +379,42 @@ app.post('/api/transcript/upload', documentUpload.single('transcript'), async (r
     res.json({ success: true, text: transcriptText, filename: req.file.originalname, charCount: transcriptText.length });
   } catch (err) {
     res.status(500).json({ error: 'Failed to process PDF', details: err.message });
+  }
+});
+
+// === AGENTIC DOCUMENT ANALYSIS ENDPOINT ===
+app.post('/api/document/analyze', async (req, res) => {
+  try {
+    const { text, filename } = req.body;
+    if (!text) {
+      return res.status(400).json({ error: 'No text provided for analysis' });
+    }
+
+    console.log(`Starting agentic analysis for: ${filename || 'unknown document'}`);
+    const analysis = await TranscriptAnalysisService.analyzeDocument(text, filename);
+
+    res.json({
+      success: true,
+      analysis: {
+        student: analysis.student,
+        courses: analysis.courses,
+        gapAnalysis: analysis.gapAnalysis,
+        courseAnalysis: {
+          completedCount: analysis.courseAnalysis.completedCount,
+          inProgressCount: analysis.courseAnalysis.inProgressCount,
+          apCount: analysis.courseAnalysis.apCount,
+          honorsCount: analysis.courseAnalysis.honorsCount,
+          totalCredits: analysis.courseAnalysis.totalCredits,
+          strongSubjects: analysis.courseAnalysis.strongSubjects,
+          weakSubjects: analysis.courseAnalysis.weakSubjects,
+        },
+        summary: analysis.summary,
+        processingTimeMs: analysis.processingTimeMs,
+      },
+    });
+  } catch (error) {
+    console.error('Error analyzing document:', error);
+    res.status(500).json({ error: 'Failed to analyze document', details: error.message });
   }
 });
 

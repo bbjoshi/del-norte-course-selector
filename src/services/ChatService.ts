@@ -1,4 +1,4 @@
-import axios from 'axios';
+ import axios from 'axios';
 import { PDFService } from './PDFService';
 
 interface EmbeddingsStatus {
@@ -24,6 +24,7 @@ export class ChatService {
   private summarizationInProgress = false;
   private transcriptText: string | null = null;
   private transcriptFilename: string | null = null;
+  private transcriptAnalysisSummary: string | null = null;
 
   private constructor() {
     this.pdfService = PDFService.getInstance();
@@ -37,11 +38,37 @@ export class ChatService {
   }
 
   /**
-   * Set transcript text from an uploaded PDF
+   * Set transcript text from an uploaded PDF and run agentic analysis
    */
   public setTranscript(text: string, filename: string): void {
     this.transcriptText = text;
     this.transcriptFilename = filename;
+    this.transcriptAnalysisSummary = null; // Will be populated by runAnalysis
+  }
+
+  /**
+   * Run the agentic analysis pipeline on the uploaded document
+   * Returns the analysis result for UI display
+   */
+  public async runAnalysis(): Promise<any> {
+    if (!this.transcriptText || !this.transcriptFilename) {
+      throw new Error('No document loaded to analyze');
+    }
+    try {
+      console.log('Running agentic analysis pipeline...');
+      const response = await axios.post('/api/document/analyze', {
+        text: this.transcriptText,
+        filename: this.transcriptFilename,
+      });
+      if (response.data.success && response.data.analysis?.summary) {
+        this.transcriptAnalysisSummary = response.data.analysis.summary;
+        console.log(`Agentic analysis complete in ${response.data.analysis.processingTimeMs}ms`);
+        return response.data.analysis;
+      }
+    } catch (err) {
+      console.error('Agentic analysis failed, will use raw text as fallback:', err);
+    }
+    return null;
   }
 
   /**
@@ -50,6 +77,7 @@ export class ChatService {
   public clearTranscript(): void {
     this.transcriptText = null;
     this.transcriptFilename = null;
+    this.transcriptAnalysisSummary = null;
   }
 
   /**
@@ -162,13 +190,18 @@ export class ChatService {
       await this.manageConversationHistory();
 
       // Call Claude API through our proxy server with the full conversation history
+      // Prefer structured analysis summary over raw text for better recommendations
+      const transcriptData = this.transcriptAnalysisSummary
+        ? this.transcriptAnalysisSummary  // Use structured analysis (agentic pipeline output)
+        : (this.transcriptText || undefined);  // Fallback to raw text
+      
       const response = await axios.post(
         '/api/chat',
         {
           model: 'anthropic/claude-3-opus:20240229',
           messages: this.conversationHistory,
           relevantInfo: relevantInfo, // Pass the relevant info separately
-          transcriptText: this.transcriptText || undefined, // Include transcript if uploaded
+          transcriptText: transcriptData,
           transcriptFilename: this.transcriptFilename || undefined,
         }
       );
