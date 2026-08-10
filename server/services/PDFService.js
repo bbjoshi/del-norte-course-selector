@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { PDFParse: pdfParse } = require('pdf-parse');
+const pdfParse = require('pdf-parse');
 const VectorSearchService = require('./VectorSearchService');
 
 /**
@@ -76,8 +76,7 @@ class PDFService {
       console.log('Starting PDF processing for vector database...');
       
       // Parse PDF
-      const parser = new pdfParse({ data: pdfBuffer });
-      const pdfData = await parser.getText();
+      const pdfData = await pdfParse(pdfBuffer);
       const text = pdfData.text;
       console.log(`Extracted ${text.length} characters from PDF`);
       

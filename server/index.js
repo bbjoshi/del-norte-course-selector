@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const path = require('path');const fs = require('fs');
-const { PDFParse: pdfParse } = require('pdf-parse');
+const pdfParse = require('pdf-parse');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const app = express();
@@ -50,8 +50,7 @@ async function processPDFForVectorDB(pdfBuffer, documentType = 'catalog', forceR
     console.log(`Starting ${documentType} processing for embeddings generation...`);
     
     // Extract text from PDF to get total chunks for progress calculation
-    const parser = new pdfParse({ data: Buffer.from(pdfBuffer) });
-    const pdfData = await parser.getText();
+    const pdfData = await pdfParse(Buffer.from(pdfBuffer));
     const text = pdfData.text;
     const chunks = PDFService.splitTextIntoChunks(text);
     const totalChunks = chunks.length;
@@ -299,8 +298,7 @@ app.post('/api/document/upload', documentUpload.single('document'), async (req, 
       // Try text extraction from PDF first
       extractionMethod = 'pdf-text';
       try {
-        const parser = new pdfParse({ data: buffer });
-        const pdfData = await parser.getText();
+        const pdfData = await pdfParse(buffer);
         extractedText = pdfData.text || '';
       } catch (pdfErr) {
         console.warn('PDF text extraction failed, will try OCR:', pdfErr.message);
@@ -370,8 +368,7 @@ app.post('/api/transcript/upload', documentUpload.single('transcript'), async (r
   };
   // Just extract text from PDF for backward compat
   try {
-    const parser = new pdfParse({ data: req.file.buffer });
-    const pdfData = await parser.getText();
+    const pdfData = await pdfParse(req.file.buffer);
     const transcriptText = pdfData.text || '';
     if (!transcriptText.trim()) {
       return res.status(400).json({ error: 'Could not extract text from PDF.' });
