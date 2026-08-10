@@ -3,7 +3,7 @@
   "version": "0.9.0-alpha.2",
   "private": true,
   "engines": {
-    "node": ">=20.x"
+    "node": "22.x"
   },
   "resolutions": {
     "nth-check": "^2.0.1",
