@@ -7,7 +7,12 @@ const fs = require('fs');
  */
 class DatabaseService {
   constructor() {
-    const dbPath = path.join(__dirname, '..', '..', 'data', 'app.db');
+    // Use DB_PATH env var if set, otherwise fall back to /tmp (works on Render free tier)
+    // NOTE: Render free tier has an ephemeral filesystem — data/app.db is wiped on each deploy.
+    // Using /tmp ensures the DB is always writable; data persists within a container session
+    // but is lost on restart. For true persistence, set DB_PATH to a mounted disk path
+    // (requires Render paid plan) or migrate to an external DB like Turso/Supabase.
+    const dbPath = process.env.DB_PATH || path.join('/tmp', 'del-norte-app.db');
     
     // Ensure data directory exists
     const dataDir = path.dirname(dbPath);
