@@ -34,7 +34,6 @@
     "@types/react": "^19.2.10",
     "@types/react-dom": "^19.2.3",
     "axios": "^1.13.4",
-    "better-sqlite3": "^12.6.2",
     "chromadb": "^3.2.2",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
@@ -58,8 +57,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "heroku-postbuild": "npm run build",
-    "postinstall": "npm rebuild better-sqlite3 --build-from-source"
+    "heroku-postbuild": "npm run build"
   },
   "eslintConfig": {
     "extends": [
