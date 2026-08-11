@@ -599,7 +599,6 @@ const ChatInterface: React.FC = () => {
 
       {/* Input Area */}
       <Box p={4} borderTopWidth={1} bg="white">
-        {embeddingsStatus.error && <Text color="orange.500" mb={2} fontSize="sm">Note: Advanced search is unavailable. Using traditional search instead.</Text>}
 
         {/* Uploaded document indicator */}
         {uploadedDoc && (
