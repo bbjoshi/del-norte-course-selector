@@ -41,10 +41,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Check if Firebase services are available
   const isFirebaseAvailable = !!auth;
 
-  if (!isFirebaseAvailable) {
-    console.error('Firebase Auth is not available');
-    setAuthError('Firebase authentication service is not available');
-  }
+  // Move side-effect into useEffect to avoid setState-during-render (React error #301)
+  useEffect(() => {
+    if (!isFirebaseAvailable) {
+      console.error('Firebase Auth is not available');
+      setAuthError('Firebase authentication service is not available');
+    }
+  }, [isFirebaseAvailable]);
 
   const checkAdminStatus = async (user: User) => {
     try {
