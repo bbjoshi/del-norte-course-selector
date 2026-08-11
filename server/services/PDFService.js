@@ -1,5 +1,6 @@
 const axios = require('axios');
-const pdfParse = require('pdf-parse');
+const _pdfParseModule = require('pdf-parse');
+const pdfParse = _pdfParseModule.default || _pdfParseModule;
 const VectorSearchService = require('./VectorSearchService');
 
 /**
@@ -143,7 +144,7 @@ class PDFService {
             }).filter(v => v !== null); // Filter out null entries
             
             if (vectors.length > 0) {
-              VectorSearchService.addVectors(vectors);
+              await VectorSearchService.addVectors(vectors);
               console.log(`Added ${vectors.length} vectors from batch ${currentBatch}`);
               success = true;
               successfulBatches++;

@@ -2,7 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const path = require('path');const fs = require('fs');
-const pdfParse = require('pdf-parse');
+const _pdfParseModule = require('pdf-parse');
+const pdfParse = _pdfParseModule.default || _pdfParseModule;
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const app = express();
@@ -62,8 +63,8 @@ async function processPDFForVectorDB(pdfBuffer, documentType = 'catalog', forceR
     const originalAddVectors = VectorSearchService.addVectors.bind(VectorSearchService);
     
     // Override addVectors to track progress
-    VectorSearchService.addVectors = (vectors) => {
-      const result = originalAddVectors(vectors);
+    VectorSearchService.addVectors = async (vectors) => {
+      const result = await originalAddVectors(vectors);
       processedChunks += vectors.length;
       embeddingsGenerationProgress = Math.min(Math.round((processedChunks / totalChunks) * 100), 100);
       console.log(`Embeddings generation progress: ${embeddingsGenerationProgress}% (${processedChunks}/${totalChunks} chunks)`);

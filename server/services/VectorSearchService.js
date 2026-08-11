@@ -12,16 +12,16 @@ class VectorSearchService {
     this.vectorSearchAvailable = false;
     this.retryCount = 0;
     
-    // Load vectors from database into memory for fast search
-    this.loadFromDatabase();
+    // Load vectors from database into memory for fast search (async)
+    this._loadPromise = this.loadFromDatabase();
   }
 
   /**
-   * Load vectors and cache from SQLite database
+   * Load vectors and cache from Turso database (async)
    */
-  loadFromDatabase() {
+  async loadFromDatabase() {
     try {
-      const vectors = DatabaseService.getVectors();
+      const vectors = await DatabaseService.getVectors();
       if (vectors.length > 0) {
         this.inMemoryVectors = vectors;
         this.vectorSearchAvailable = true;
@@ -30,7 +30,7 @@ class VectorSearchService {
         console.log('No vectors found in database');
       }
       
-      const cacheSize = DatabaseService.getCacheSize();
+      const cacheSize = await DatabaseService.getCacheSize();
       console.log(`Embeddings cache has ${cacheSize} entries in database`);
     } catch (error) {
       console.error('Error loading from database:', error.message);
@@ -64,7 +64,7 @@ class VectorSearchService {
 
       // Check database cache for existing embeddings
       const cacheKeys = texts.map(text => this.hashText(text));
-      const cachedResults = cacheKeys.map(key => DatabaseService.getCachedEmbedding(key));
+      const cachedResults = await Promise.all(cacheKeys.map(key => DatabaseService.getCachedEmbedding(key)));
       
       // If all texts are in cache, return cached embeddings
       if (cachedResults.every(result => result !== null)) {
@@ -158,11 +158,13 @@ class VectorSearchService {
         generatedEmbeddings = this._generateFallbackEmbeddings(textsToProcess, content);
       }
       
-      // Store new embeddings in database cache
+      // Store new embeddings in database cache (fire-and-forget, don't block)
       textsToProcess.forEach((text, i) => {
         if (i < generatedEmbeddings.length) {
           const key = this.hashText(text);
-          DatabaseService.setCachedEmbedding(key, generatedEmbeddings[i]);
+          DatabaseService.setCachedEmbedding(key, generatedEmbeddings[i]).catch(e =>
+            console.warn('Failed to cache embedding:', e.message)
+          );
         }
       });
       
@@ -260,7 +262,7 @@ class VectorSearchService {
   /**
    * Add vectors to both in-memory store and database
    */
-  addVectors(vectors, documentType = 'unknown') {
+  async addVectors(vectors, documentType = 'unknown') {
     const validVectors = vectors.filter(v => v.embedding && Array.isArray(v.embedding) && v.embedding.length > 0);
     
     if (validVectors.length === 0) {
@@ -274,7 +276,7 @@ class VectorSearchService {
     
     // Persist to database
     try {
-      DatabaseService.addVectors(validVectors, documentType);
+      await DatabaseService.addVectors(validVectors, documentType);
       console.log(`Persisted ${validVectors.length} vectors to database. Total in-memory: ${this.inMemoryVectors.length}`);
     } catch (error) {
       console.error('Error persisting vectors to database:', error.message);
@@ -322,11 +324,11 @@ class VectorSearchService {
   isAvailable() { return this.vectorSearchAvailable; }
   getVectorCount() { return this.inMemoryVectors.length; }
 
-  getCacheStats() {
+  async getCacheStats() {
     return {
-      cacheSize: DatabaseService.getCacheSize(),
+      cacheSize: await DatabaseService.getCacheSize(),
       vectorCount: this.inMemoryVectors.length,
-      databaseVectorCount: DatabaseService.getVectorCount(),
+      databaseVectorCount: await DatabaseService.getVectorCount(),
     };
   }
 
@@ -334,11 +336,11 @@ class VectorSearchService {
     return DatabaseService.clearEmbeddingsCache();
   }
 
-  clearVectors() {
+  async clearVectors() {
     const count = this.inMemoryVectors.length;
     this.inMemoryVectors = [];
     this.vectorSearchAvailable = false;
-    DatabaseService.clearVectors();
+    await DatabaseService.clearVectors();
     console.log(`Cleared ${count} vectors from memory and database`);
     return count;
   }
