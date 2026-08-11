@@ -1,0 +1,26 @@
+name: Keep Render App Alive
+
+# Ping the Render free-tier service every 10 minutes so it never spins down.
+# GitHub Actions cron runs in UTC. This fires every 10 minutes around the clock.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  # Also allow a manual trigger from the GitHub Actions UI
+  workflow_dispatch:
+
+jobs:
+  ping:
+    name: Ping Render health endpoint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /health
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            https://del-norte-course-selector.onrender.com/health \
+            --max-time 30)
+          echo "Response status: $STATUS"
+          if [ "$STATUS" -ge 200 ] && [ "$STATUS" -lt 400 ]; then
+            echo "✅ App is alive (HTTP $STATUS)"
+          else
+            echo "⚠️  Unexpected status $STATUS — app may be cold-starting"
+          fi
