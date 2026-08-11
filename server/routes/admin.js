@@ -202,9 +202,9 @@ router.get('/catalog-info', (req, res) => {
  * @route GET /api/admin/analytics
  * @desc Get usage analytics summary
  */
-router.get('/analytics', (req, res) => {
+router.get('/analytics', async (req, res) => {
   try {
-    const analytics = DatabaseService.getAnalyticsSummary();
+    const analytics = await DatabaseService.getAnalyticsSummary();
     res.json({ success: true, analytics });
   } catch (error) {
     console.error('Error fetching analytics:', error);

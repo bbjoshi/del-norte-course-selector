@@ -4,7 +4,7 @@ services:
     name: del-norte-course-selector
     runtime: node
     plan: free
-    buildCommand: npm cache clean --force && npm install --legacy-peer-deps --include=dev && npm rebuild better-sqlite3 --build-from-source && NODE_OPTIONS=--max-old-space-size=1024 npm run build
+    buildCommand: npm cache clean --force && npm install --legacy-peer-deps --include=dev && NODE_OPTIONS=--max-old-space-size=1024 npm run build
     startCommand: node server/index.js
     envVars:
       - key: NODE_ENV
@@ -29,12 +29,10 @@ services:
         sync: false
       - key: PDF_URL
         value: "https://4.files.edl.io/f7e7/02/04/25/231513-8c9f8c2e-257a-49e3-8c4c-ef249811b38e.pdf"
-      # DB_PATH controls where the SQLite database is stored.
-      # On Render free tier (ephemeral filesystem), /tmp is always writable.
-      # Data persists within a container session but is lost on restart/redeploy.
-      # For true persistence, upgrade to a paid plan, add a Render Disk mounted at
-      # /var/data, and set DB_PATH=/var/data/app.db
-      - key: DB_PATH
-        value: "/tmp/del-norte-app.db"
+      # Turso cloud SQLite — persistent across restarts (free tier, no disk needed)
+      - key: TURSO_DATABASE_URL
+        value: "libsql://del-norte-db-bbjoshi.aws-us-west-2.turso.io"
+      - key: TURSO_AUTH_TOKEN
+        sync: false
     healthCheckPath: /health
     autoDeploy: true

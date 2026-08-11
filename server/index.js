@@ -418,13 +418,13 @@ app.post('/api/document/analyze', async (req, res) => {
 // === ANALYTICS TRACKING ENDPOINTS ===
 
 // Track an analytics event (account creation, login, question, etc.)
-app.post('/api/analytics/track', (req, res) => {
+app.post('/api/analytics/track', async (req, res) => {
   try {
     const { eventType, userId, userEmail, sessionId, metadata } = req.body;
     if (!eventType) {
       return res.status(400).json({ error: 'eventType is required' });
     }
-    DatabaseService.trackEvent({ eventType, userId, userEmail, sessionId, metadata });
+    await DatabaseService.trackEvent({ eventType, userId, userEmail, sessionId, metadata });
     res.json({ success: true });
   } catch (error) {
     console.error('Error tracking analytics event:', error);
@@ -433,13 +433,13 @@ app.post('/api/analytics/track', (req, res) => {
 });
 
 // Start a user session
-app.post('/api/analytics/session/start', (req, res) => {
+app.post('/api/analytics/session/start', async (req, res) => {
   try {
     const { sessionId, userId, userEmail } = req.body;
     if (!sessionId || !userId) {
       return res.status(400).json({ error: 'sessionId and userId are required' });
     }
-    DatabaseService.startUserSession({ id: sessionId, userId, userEmail });
+    await DatabaseService.startUserSession({ id: sessionId, userId, userEmail });
     res.json({ success: true });
   } catch (error) {
     console.error('Error starting user session:', error);
@@ -448,13 +448,13 @@ app.post('/api/analytics/session/start', (req, res) => {
 });
 
 // Heartbeat / keep-alive for user session
-app.post('/api/analytics/session/heartbeat', (req, res) => {
+app.post('/api/analytics/session/heartbeat', async (req, res) => {
   try {
     const { sessionId } = req.body;
     if (!sessionId) {
       return res.status(400).json({ error: 'sessionId is required' });
     }
-    DatabaseService.updateUserSessionActivity(sessionId);
+    await DatabaseService.updateUserSessionActivity(sessionId);
     res.json({ success: true });
   } catch (error) {
     console.error('Error updating session heartbeat:', error);
@@ -463,13 +463,13 @@ app.post('/api/analytics/session/heartbeat', (req, res) => {
 });
 
 // End a user session
-app.post('/api/analytics/session/end', (req, res) => {
+app.post('/api/analytics/session/end', async (req, res) => {
   try {
     const { sessionId } = req.body;
     if (!sessionId) {
       return res.status(400).json({ error: 'sessionId is required' });
     }
-    DatabaseService.endUserSession(sessionId);
+    await DatabaseService.endUserSession(sessionId);
     res.json({ success: true });
   } catch (error) {
     console.error('Error ending user session:', error);
@@ -1024,8 +1024,8 @@ app.get('/api/vector-search', async (req, res) => {
   }
 });
 
-// Feedback storage endpoint (SQLite-backed)
-app.post('/api/feedback', (req, res) => {
+// Feedback storage endpoint (Turso-backed)
+app.post('/api/feedback', async (req, res) => {
   try {
     const { messageId, sessionId, query, response: botResponse, rating, comment, timestamp } = req.body;
     
@@ -1033,7 +1033,7 @@ app.post('/api/feedback', (req, res) => {
       return res.status(400).json({ error: 'messageId and rating are required' });
     }
     
-    DatabaseService.addFeedback({
+    await DatabaseService.addFeedback({
       messageId,
       sessionId: sessionId || null,
       query: query || '',
@@ -1051,12 +1051,12 @@ app.post('/api/feedback', (req, res) => {
   }
 });
 
-// Get all feedback (for admin, SQLite-backed)
-app.get('/api/feedback', (req, res) => {
+// Get all feedback (for admin, Turso-backed)
+app.get('/api/feedback', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 100;
-    const feedback = DatabaseService.getFeedback(limit);
-    const stats = DatabaseService.getFeedbackStats();
+    const feedback = await DatabaseService.getFeedback(limit);
+    const stats = await DatabaseService.getFeedbackStats();
     res.json({ feedback, total: stats.total, stats });
   } catch (error) {
     console.error('Error reading feedback:', error);
@@ -1064,12 +1064,12 @@ app.get('/api/feedback', (req, res) => {
   }
 });
 
-// === CHAT HISTORY API (SQLite-backed) ===
+// === CHAT HISTORY API (Turso-backed) ===
 
 // Get all chat sessions
-app.get('/api/chat-sessions', (req, res) => {
+app.get('/api/chat-sessions', async (req, res) => {
   try {
-    const sessions = DatabaseService.getSessions();
+    const sessions = await DatabaseService.getSessions();
     res.json({ sessions });
   } catch (error) {
     console.error('Error fetching chat sessions:', error);
@@ -1078,13 +1078,13 @@ app.get('/api/chat-sessions', (req, res) => {
 });
 
 // Get a single session with its messages
-app.get('/api/chat-sessions/:sessionId', (req, res) => {
+app.get('/api/chat-sessions/:sessionId', async (req, res) => {
   try {
-    const session = DatabaseService.getSession(req.params.sessionId);
+    const session = await DatabaseService.getSession(req.params.sessionId);
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
     }
-    const messages = DatabaseService.getMessages(req.params.sessionId);
+    const messages = await DatabaseService.getMessages(req.params.sessionId);
     res.json({ session, messages });
   } catch (error) {
     console.error('Error fetching session:', error);
@@ -1093,14 +1093,14 @@ app.get('/api/chat-sessions/:sessionId', (req, res) => {
 });
 
 // Save a message to a session
-app.post('/api/chat-sessions/:sessionId/messages', (req, res) => {
+app.post('/api/chat-sessions/:sessionId/messages', async (req, res) => {
   try {
     const { id, text, sender, queryText, timestamp } = req.body;
     if (!id || !text || !sender) {
       return res.status(400).json({ error: 'id, text, and sender are required' });
     }
     
-    DatabaseService.addMessage({
+    await DatabaseService.addMessage({
       id,
       sessionId: req.params.sessionId,
       text,
@@ -1117,9 +1117,9 @@ app.post('/api/chat-sessions/:sessionId/messages', (req, res) => {
 });
 
 // Delete a chat session
-app.delete('/api/chat-sessions/:sessionId', (req, res) => {
+app.delete('/api/chat-sessions/:sessionId', async (req, res) => {
   try {
-    DatabaseService.deleteSession(req.params.sessionId);
+    await DatabaseService.deleteSession(req.params.sessionId);
     res.json({ success: true });
   } catch (error) {
     console.error('Error deleting session:', error);
