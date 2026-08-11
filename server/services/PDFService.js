@@ -1,6 +1,11 @@
 const axios = require('axios');
-const _pdfParseModule = require('pdf-parse');
-const pdfParse = _pdfParseModule.default || _pdfParseModule;
+// pdf-parse v2.x changed to a class-based API — wrap it to match v1 function signature
+const { PDFParse } = require('pdf-parse');
+async function pdfParse(buffer) {
+  const parser = new PDFParse({ data: buffer, verbosity: 0 });
+  const result = await parser.getText();
+  return { text: result.text };
+}
 const VectorSearchService = require('./VectorSearchService');
 
 /**
