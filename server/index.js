@@ -1328,6 +1328,21 @@ async function initializeVectorDatabase() {
       try {
         console.log(`\n=== Processing ${doc.name} ===`);
         const pdfBuffer = fs.readFileSync(doc.path);
+
+        // Extract text and store PDF content for traditional search fallback
+        // (only store catalog as primary searchable content)
+        if (doc.type === 'catalog' || !PDFService.getPDFContent()) {
+          try {
+            const pdfData = await pdfParse(pdfBuffer);
+            if (pdfData.text && pdfData.text.trim().length > 0) {
+              PDFService.storePDFContent(pdfData.text);
+              console.log(`✓ Stored PDF text content for ${doc.name} (${pdfData.text.length} chars)`);
+            }
+          } catch (parseErr) {
+            console.warn(`Could not extract text from ${doc.name} for traditional search:`, parseErr.message);
+          }
+        }
+
         const success = await processPDFForVectorDB(pdfBuffer, doc.type, true);
         
         if (success) {
