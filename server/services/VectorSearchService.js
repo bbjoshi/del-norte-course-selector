@@ -90,7 +90,7 @@ class VectorSearchService {
       const response = await axios.post(
         'https://openrouter.ai/api/v1/chat/completions',
         {
-          model: 'anthropic/claude-3-haiku:20240307',
+          model: 'anthropic/claude-3-haiku',
           messages: [
             { 
               role: 'system', 
