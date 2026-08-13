@@ -83,9 +83,12 @@ const ChatInterface: React.FC = () => {
   const botBubbleBg = useColorModeValue('white', 'gray.700');
   const botBubbleBorder = useColorModeValue('gray.200', 'gray.600');
   const chatBg = useColorModeValue('gray.50', 'gray.800');
-  const feedbackBg = useColorModeValue('gray.50', 'gray.600');
+  const cardBg = useColorModeValue('white', 'gray.800');
+  const inputAreaBg = useColorModeValue('white', 'gray.800');
+  const feedbackBg = useColorModeValue('gray.50', 'gray.700');
   const sidebarHoverBg = useColorModeValue('gray.100', 'gray.600');
   const activeSessionBg = useColorModeValue('brand.50', 'brand.900');
+  const inputBorderColor = useColorModeValue('gray.300', 'gray.600');
 
   const [pdfService] = useState(() => PDFService.getInstance());
   const [chatService] = useState(() => ChatService.getInstance());
@@ -477,7 +480,7 @@ const ChatInterface: React.FC = () => {
         <Collapse in={showCommentBox && !submitted} animateOpacity>
           <Box mt={2} p={2} bg={feedbackBg} borderRadius="md">
             <Text fontSize="xs" color="gray.600" mb={1}>{rating === 'negative' ? 'What was wrong or could be improved?' : 'What did you find helpful? (optional)'}</Text>
-            <Textarea size="sm" fontSize="sm" placeholder={rating === 'negative' ? 'e.g., The information was incorrect...' : 'e.g., Great course recommendations...'} value={comment} onChange={(e) => handleFeedbackComment(message.id, e.target.value)} rows={2} resize="none" bg="white" borderColor="gray.300" _focus={{ borderColor: 'brand.500' }} />
+            <Textarea size="sm" fontSize="sm" placeholder={rating === 'negative' ? 'e.g., The information was incorrect...' : 'e.g., Great course recommendations...'} value={comment} onChange={(e) => handleFeedbackComment(message.id, e.target.value)} rows={2} resize="none" bg={cardBg} borderColor={inputBorderColor} _focus={{ borderColor: 'brand.500' }} />
             <HStack mt={2} justify="flex-end" spacing={2}>
               <Button size="xs" variant="ghost" onClick={() => { setMessages(prev => prev.map(msg => msg.id === message.id && msg.feedback ? { ...msg, feedback: { ...msg.feedback, showCommentBox: false, rating: null, comment: '' } } : msg)); }}>Cancel</Button>
               <Button size="xs" colorScheme="brand" onClick={() => submitFeedback(message.id)}>Submit</Button>
@@ -504,7 +507,7 @@ const ChatInterface: React.FC = () => {
   };
 
   return (
-    <Box borderWidth={1} borderRadius="xl" overflow="hidden" bg="white" height="70vh" display="flex" flexDirection="column" boxShadow="lg">
+    <Box borderWidth={1} borderRadius="xl" overflow="hidden" bg={cardBg} height="70vh" display="flex" flexDirection="column" boxShadow="lg">
       {/* Chat Header */}
       <Box px={4} py={2.5} borderBottomWidth={1} bg="brand.600" color="white">
         <Flex justify="space-between" align="center">
@@ -609,7 +612,7 @@ const ChatInterface: React.FC = () => {
       )}
 
       {/* Input Area */}
-      <Box px={3} py={2.5} borderTopWidth={1} bg="white">
+      <Box px={3} py={2.5} borderTopWidth={1} bg={inputAreaBg}>
 
         {/* Uploaded document indicator */}
         {uploadedDoc && (

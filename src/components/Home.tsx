@@ -31,6 +31,8 @@ const Home: React.FC = () => {
   );
   const cardBg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
+  const headingColor = useColorModeValue('brand.700', 'brand.300');
+  const subtitleColor = useColorModeValue('gray.600', 'gray.400');
 
   const handleLogout = async () => {
     try {
@@ -110,10 +112,10 @@ const Home: React.FC = () => {
           >
             <Flex align="center" justify="space-between" wrap="wrap">
               <Box mb={{ base: 4, md: 0 }}>
-                <Heading size="md" mb={2} color="brand.700">
+                <Heading size="md" mb={2} color={headingColor}>
                   Welcome to Your Course Selection Assistant
                 </Heading>
-                <Text color="gray.600">
+                <Text color={subtitleColor}>
                   Ask questions about courses, requirements, and get personalized recommendations
                 </Text>
               </Box>
