@@ -8,6 +8,7 @@ import {
   VStack, 
   Flex, 
   HStack, 
+  Link,
   useColorModeValue,
   Badge
 } from '@chakra-ui/react';
@@ -116,9 +117,15 @@ const Home: React.FC = () => {
           {/* Footer */}
           <Text fontSize="xs" color="gray.400" textAlign="center" pb={2}>
             Developed by{' '}
-            <Text as="span" fontWeight="semibold" color="gray.500">
+            <Link
+              href="https://rudrabjoshi.github.io/student/"
+              isExternal
+              fontWeight="semibold"
+              color="brand.600"
+              _hover={{ color: 'brand.500', textDecoration: 'underline' }}
+            >
               Rudra Joshi
-            </Text>
+            </Link>
           </Text>
         </VStack>
       </Container>
