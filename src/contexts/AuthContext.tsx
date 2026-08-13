@@ -6,7 +6,8 @@ import {
   signOut,
   onAuthStateChanged,
   GoogleAuthProvider,
-  signInWithPopup
+  signInWithPopup,
+  sendPasswordResetEmail
 } from '@firebase/auth';
 import { auth, db } from '../config/firebase';
 import { doc, setDoc, getDoc } from '@firebase/firestore';
@@ -20,6 +21,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -148,6 +150,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const resetPassword = async (email: string) => {
+    if (!auth) throw new Error('Firebase authentication is not available');
+    await sendPasswordResetEmail(auth, email);
+  };
+
   const logout = async () => {
     if (!auth) {
       throw new Error('Firebase authentication is not available');
@@ -210,7 +217,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     signup,
     login,
     logout,
-    signInWithGoogle
+    signInWithGoogle,
+    resetPassword
   };
 
   return (
