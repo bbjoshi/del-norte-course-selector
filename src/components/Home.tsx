@@ -112,6 +112,14 @@ const Home: React.FC = () => {
 
           {/* Chat Interface */}
           <ChatInterface />
+
+          {/* Footer */}
+          <Text fontSize="xs" color="gray.400" textAlign="center" pb={2}>
+            Developed by{' '}
+            <Text as="span" fontWeight="semibold" color="gray.500">
+              Rudra Joshi
+            </Text>
+          </Text>
         </VStack>
       </Container>
     </Box>
