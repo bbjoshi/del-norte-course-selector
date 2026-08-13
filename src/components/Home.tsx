@@ -9,7 +9,10 @@ import {
   Flex, 
   HStack, 
   Link,
+  IconButton,
+  Tooltip,
   useColorModeValue,
+  useColorMode,
   Badge
 } from '@chakra-ui/react';
 import { useAuth } from '../contexts/AuthContext';
@@ -20,6 +23,8 @@ import PDFViewer from './PDFViewer';
 const Home: React.FC = () => {
   const { currentUser, logout, isAdmin } = useAuth();
   const navigate = useNavigate();
+  const { colorMode, toggleColorMode } = useColorMode();
+  const pageBg = useColorModeValue('gray.50', 'gray.900');
   const bgGradient = useColorModeValue(
     'linear(to-r, brand.600, brand.700)',
     'linear(to-r, brand.500, brand.600)'
@@ -37,7 +42,7 @@ const Home: React.FC = () => {
   };
 
   return (
-    <Box minH="100vh" bg="gray.50">
+    <Box minH="100vh" bg={pageBg}>
       {/* Header */}
       <Box 
         py={4} 
@@ -51,10 +56,21 @@ const Home: React.FC = () => {
               Del Norte Course Selector
             </Heading>
             
-            <HStack spacing={4}>
-              <Text fontWeight="medium">
+            <HStack spacing={3}>
+              <Text fontWeight="medium" fontSize="sm">
                 {currentUser?.email}
               </Text>
+              <Tooltip label={colorMode === 'light' ? 'Dark mode' : 'Light mode'} placement="bottom" hasArrow>
+                <IconButton
+                  aria-label="Toggle color mode"
+                  icon={<span style={{ fontSize: '16px' }}>{colorMode === 'light' ? '🌙' : '☀️'}</span>}
+                  size="sm"
+                  variant="ghost"
+                  color="white"
+                  _hover={{ bg: 'whiteAlpha.200' }}
+                  onClick={toggleColorMode}
+                />
+              </Tooltip>
               {isAdmin && (
                 <Button 
                   onClick={() => navigate('/admin')} 

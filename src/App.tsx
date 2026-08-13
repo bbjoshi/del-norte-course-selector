@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { ChakraProvider } from '@chakra-ui/react';
+import { ChakraProvider, ColorModeScript } from '@chakra-ui/react';
 import { AuthProvider } from './contexts/AuthContext';
 import Login from './components/auth/Login';
 import SignUp from './components/auth/SignUp';
@@ -11,6 +11,8 @@ import theme from './theme';
 
 function App() {
   return (
+    <>
+    <ColorModeScript initialColorMode={theme.config.initialColorMode} />
     <ChakraProvider theme={theme}>
       <AuthProvider>
         <Router>
@@ -39,6 +41,7 @@ function App() {
         </Router>
       </AuthProvider>
     </ChakraProvider>
+    </>
   );
 }
 
