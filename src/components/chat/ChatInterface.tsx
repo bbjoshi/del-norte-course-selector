@@ -506,9 +506,9 @@ const ChatInterface: React.FC = () => {
   return (
     <Box borderWidth={1} borderRadius="xl" overflow="hidden" bg="white" height="70vh" display="flex" flexDirection="column" boxShadow="lg">
       {/* Chat Header */}
-      <Box p={4} borderBottomWidth={1} bg="brand.600" color="white">
+      <Box px={4} py={2.5} borderBottomWidth={1} bg="brand.600" color="white">
         <Flex justify="space-between" align="center">
-          <Heading size="md">Course Selection Assistant</Heading>
+          <Heading size="sm" letterSpacing="tight">Course Selection Assistant</Heading>
           <HStack spacing={2}>
             <Tooltip label="New Chat" placement="bottom" hasArrow>
               <IconButton aria-label="New chat" icon={<span style={{ fontSize: '18px' }}>✏️</span>} size="sm" variant="ghost" color="white" _hover={{ bg: 'brand.700' }} onClick={startNewChat} />
@@ -578,16 +578,16 @@ const ChatInterface: React.FC = () => {
           </VStack>
         </Center>
       ) : (
-        <VStack flex={1} overflowY="auto" p={4} spacing={4} align="stretch" bg={chatBg}>
+        <VStack flex={1} overflowY="auto" px={3} py={3} spacing={2} align="stretch" bg={chatBg}>
           {messages.map(message => (
             <Flex key={message.id} justify={message.sender === 'user' ? 'flex-end' : 'flex-start'}>
-              <Box maxW={{ base: "85%", md: "70%" }} bg={message.sender === 'user' ? userBubbleBg : botBubbleBg} color={message.sender === 'user' ? 'white' : 'inherit'} p={4} borderRadius="lg" boxShadow="md" borderWidth={message.sender === 'bot' ? 1 : 0} borderColor={message.sender === 'bot' ? botBubbleBorder : 'transparent'}>
+              <Box maxW={{ base: "90%", md: "75%" }} bg={message.sender === 'user' ? userBubbleBg : botBubbleBg} color={message.sender === 'user' ? 'white' : 'inherit'} px={3} py={2} borderRadius="lg" boxShadow="sm" borderWidth={message.sender === 'bot' ? 1 : 0} borderColor={message.sender === 'bot' ? botBubbleBorder : 'transparent'}>
                 {message.sender === 'user' ? (
-                  <Text fontWeight="medium">{message.text}</Text>
+                  <Text fontSize="sm" fontWeight="medium" lineHeight="1.5">{message.text}</Text>
                 ) : (
                   <Box className="markdown-content"><ReactMarkdown>{message.text}</ReactMarkdown></Box>
                 )}
-                <Text fontSize="xs" color={message.sender === 'user' ? 'whiteAlpha.800' : 'gray.500'} mt={2} textAlign="right">
+                <Text fontSize="xs" color={message.sender === 'user' ? 'whiteAlpha.700' : 'gray.400'} mt={1} textAlign="right">
                   {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </Text>
                 {message.sender === 'bot' && message.id !== 'welcome' && <FeedbackSection message={message} />}
@@ -596,10 +596,10 @@ const ChatInterface: React.FC = () => {
           ))}
           {isLoading && (
             <Flex justify="flex-start">
-              <Box maxW={{ base: "85%", md: "70%" }} bg={botBubbleBg} p={4} borderRadius="lg" boxShadow="md" borderWidth={1} borderColor={botBubbleBorder}>
+              <Box bg={botBubbleBg} px={3} py={2} borderRadius="lg" boxShadow="sm" borderWidth={1} borderColor={botBubbleBorder}>
                 <HStack spacing={2}>
-                  <Spinner size="sm" color="brand.500" speed="0.8s" />
-                  <Text color="gray.500" fontStyle="italic">Thinking...</Text>
+                  <Spinner size="xs" color="brand.500" speed="0.8s" />
+                  <Text fontSize="sm" color="gray.500" fontStyle="italic">Thinking...</Text>
                 </HStack>
               </Box>
             </Flex>
@@ -609,7 +609,7 @@ const ChatInterface: React.FC = () => {
       )}
 
       {/* Input Area */}
-      <Box p={4} borderTopWidth={1} bg="white">
+      <Box px={3} py={2.5} borderTopWidth={1} bg="white">
 
         {/* Uploaded document indicator */}
         {uploadedDoc && (
@@ -646,10 +646,10 @@ const ChatInterface: React.FC = () => {
                 isDisabled={isUploadingDoc || !isInitialized}
               />
             </Tooltip>
-            <InputGroup size="lg" flex={1}>
-              <Input value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} placeholder={uploadedDoc ? "Ask about your courses, what to take next..." : "Ask about courses, requirements, or recommendations..."} disabled={isLoading || !isInitialized} pr="4.5rem" focusBorderColor="brand.500" borderRadius="md" boxShadow="sm" _hover={{ borderColor: 'brand.300' }} />
-              <InputRightElement width="4.5rem">
-                <Button h="1.75rem" size="sm" type="submit" colorScheme="brand" disabled={isLoading || !isInitialized || !inputMessage.trim()} borderRadius="md">Send</Button>
+            <InputGroup size="md" flex={1}>
+              <Input value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} fontSize="sm" placeholder={uploadedDoc ? "Ask about your courses, what to take next..." : "Ask about courses, requirements, or recommendations..."} disabled={isLoading || !isInitialized} pr="4rem" focusBorderColor="brand.500" borderRadius="md" _hover={{ borderColor: 'brand.300' }} />
+              <InputRightElement width="4rem">
+                <Button h="1.5rem" size="sm" type="submit" colorScheme="brand" disabled={isLoading || !isInitialized || !inputMessage.trim()} borderRadius="md" fontSize="sm">Send</Button>
               </InputRightElement>
             </InputGroup>
           </HStack>
