@@ -204,11 +204,6 @@ const ChatInterface: React.FC = () => {
     }
   };
 
-  // Allow user (or auto-timeout) to skip past the embeddings loading screen
-  const skipEmbeddingsScreen = () => {
-    setEmbeddingsStatus(prev => ({ ...prev, inProgress: false }));
-  };
-
   // Handle feedback
   const handleFeedbackRating = (messageId: string, rating: 'positive' | 'negative') => {
     setMessages(prev => prev.map(msg => {
@@ -579,10 +574,7 @@ const ChatInterface: React.FC = () => {
             <Text color="gray.700" fontWeight="medium">Generating AI embeddings for better search results...</Text>
             <Progress value={embeddingsStatus.progress} size="sm" width="100%" colorScheme="brand" hasStripe isAnimated />
             <Text color="gray.500" fontSize="sm">{embeddingsStatus.progress}% complete ({embeddingsStatus.vectorCount} vectors generated)</Text>
-            <Button size="sm" variant="outline" colorScheme="brand" onClick={skipEmbeddingsScreen} mt={1}>
-              Start Chatting Now →
-            </Button>
-            <Text color="gray.400" fontSize="xs">Search results will improve once this process completes in the background.</Text>
+            <Text color="gray.400" fontSize="xs">Please wait — this only happens once. Results will be cached for future visits.</Text>
           </VStack>
         </Center>
       ) : (
