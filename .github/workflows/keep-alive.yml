@@ -5,7 +5,10 @@ name: Keep Render App Alive
 on:
   schedule:
     - cron: '*/10 * * * *'
-  # Also allow a manual trigger from the GitHub Actions UI
+  # Also triggers on every push to main (ensures it's activated and tests the ping)
+  push:
+    branches: [main]
+  # Allow a manual trigger from the GitHub Actions UI
   workflow_dispatch:
 
 jobs:
