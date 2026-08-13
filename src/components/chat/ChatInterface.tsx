@@ -197,11 +197,16 @@ const ChatInterface: React.FC = () => {
     try {
       const response = await axios.get('/api/embeddings-status');
       setEmbeddingsStatus(response.data);
-      return response.data.complete || response.data.error ? true : false;
+      return response.data; // return the full data object, not stale state
     } catch (error) {
       console.error('Error checking embeddings status:', error);
-      return false;
+      return null;
     }
+  };
+
+  // Allow user (or auto-timeout) to skip past the embeddings loading screen
+  const skipEmbeddingsScreen = () => {
+    setEmbeddingsStatus(prev => ({ ...prev, inProgress: false }));
   };
 
   // Handle feedback
@@ -288,10 +293,21 @@ const ChatInterface: React.FC = () => {
           setMessages([createWelcomeMessage()]);
         }
 
-        if (embeddingsStatus.inProgress) {
+        // Use the freshly-fetched status (not stale React state) to decide whether to poll
+        const freshStatus = await checkEmbeddingsStatus();
+        if (freshStatus?.inProgress) {
+          let elapsedMs = 0;
+          const MAX_WAIT_MS = 90_000; // auto-dismiss after 90 s
           const pollInterval = setInterval(async () => {
-            const isDone = await checkEmbeddingsStatus();
-            if (isDone) clearInterval(pollInterval);
+            elapsedMs += 2000;
+            const latest = await checkEmbeddingsStatus();
+            if (latest?.complete || latest?.error || elapsedMs >= MAX_WAIT_MS) {
+              clearInterval(pollInterval);
+              if (elapsedMs >= MAX_WAIT_MS) {
+                // Force-dismiss if backend is still generating after 90 s
+                setEmbeddingsStatus(prev => ({ ...prev, inProgress: false }));
+              }
+            }
           }, 2000);
           return () => clearInterval(pollInterval);
         }
@@ -563,7 +579,10 @@ const ChatInterface: React.FC = () => {
             <Text color="gray.700" fontWeight="medium">Generating AI embeddings for better search results...</Text>
             <Progress value={embeddingsStatus.progress} size="sm" width="100%" colorScheme="brand" hasStripe isAnimated />
             <Text color="gray.500" fontSize="sm">{embeddingsStatus.progress}% complete ({embeddingsStatus.vectorCount} vectors generated)</Text>
-            <Text color="gray.600" fontSize="sm" mt={2}>You can start chatting now, but search results will improve once this process completes.</Text>
+            <Button size="sm" variant="outline" colorScheme="brand" onClick={skipEmbeddingsScreen} mt={1}>
+              Start Chatting Now →
+            </Button>
+            <Text color="gray.400" fontSize="xs">Search results will improve once this process completes in the background.</Text>
           </VStack>
         </Center>
       ) : (
