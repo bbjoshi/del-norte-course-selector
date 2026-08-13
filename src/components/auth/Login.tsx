@@ -160,10 +160,15 @@ const Login: React.FC = () => {
                   <Box p={4} bg={forgotBg} borderRadius="lg" borderWidth={1} borderColor={forgotBorder}>
                     {resetSent ? (
                       <VStack spacing={2} align="start">
-                        <Text fontSize="sm" color="green.600" fontWeight="medium">✅ Reset link sent!</Text>
+                        <Text fontSize="sm" color="green.600" fontWeight="semibold">✅ Reset email sent!</Text>
                         <Text fontSize="sm" color="gray.600">
-                          Check <strong>{resetEmail}</strong> for a password reset link. It may take a minute to arrive.
+                          We sent a link to <strong>{resetEmail}</strong>.
                         </Text>
+                        <Box p={2} bg="yellow.50" borderRadius="md" borderWidth={1} borderColor="yellow.200" width="100%">
+                          <Text fontSize="xs" color="yellow.800">
+                            ⚠️ <strong>Check your spam / junk folder</strong> — password reset emails from Firebase often land there. Look for an email from <em>noreply@…firebaseapp.com</em>.
+                          </Text>
+                        </Box>
                         <Button size="xs" variant="link" colorScheme="brand" onClick={() => { setResetSent(false); setShowForgot(false); }}>
                           Back to sign in
                         </Button>

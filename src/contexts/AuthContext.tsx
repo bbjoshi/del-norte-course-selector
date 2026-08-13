@@ -152,7 +152,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const resetPassword = async (email: string) => {
     if (!auth) throw new Error('Firebase authentication is not available');
-    await sendPasswordResetEmail(auth, email);
+    // Specify the continue URL so Firebase redirects back to our login page
+    // and the email is less likely to be flagged as spam
+    const actionCodeSettings = {
+      url: `${window.location.origin}/login`,
+      handleCodeInApp: false,
+    };
+    await sendPasswordResetEmail(auth, email, actionCodeSettings);
   };
 
   const logout = async () => {
