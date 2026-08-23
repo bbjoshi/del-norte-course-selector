@@ -19,7 +19,7 @@ jobs:
       - name: Ping /health
         run: |
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            https://del-norte-course-selector.onrender.com/health \
+            https://del-norte-course-selector-60lg.onrender.com/health \
             --max-time 30)
           echo "Response status: $STATUS"
           if [ "$STATUS" -ge 200 ] && [ "$STATUS" -lt 400 ]; then
