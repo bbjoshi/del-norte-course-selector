@@ -54,6 +54,11 @@ current-catalog.pdf
 # Feedback data
 feedback.json
 
+# API keys / secrets accidentally kept outside .env
+openrouter-key
+*-key
+*.key
+
 # SQLite database
 /data/
 *.db
