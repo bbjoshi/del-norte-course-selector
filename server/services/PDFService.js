@@ -32,43 +32,57 @@ class PDFService {
    * @returns {string[]} - Array of text chunks
    */
   splitTextIntoChunks(text, maxChunkSize = 1000, overlap = 200) {
-    // Clean the text
-    const cleanedText = text
-      .replace(/\s+/g, ' ')
-      .trim();
-    
-    // Split into paragraphs first
-    let paragraphs = cleanedText.split(/(?:\r?\n){2,}/);
-    paragraphs = paragraphs.filter(p => p.trim().length > 0);
-    
+    // Split into paragraphs using the ORIGINAL text's line breaks — this must happen
+    // before whitespace is collapsed, or every document collapses into a single
+    // "paragraph" with no split points at all.
+    let paragraphs = text.split(/(?:\r?\n\s*){2,}/);
+    paragraphs = paragraphs
+      .map(p => p.replace(/\s+/g, ' ').trim())
+      .filter(p => p.length > 0);
+
+    // Some PDF extractions produce no blank-line paragraph breaks at all, or a single
+    // paragraph is itself longer than maxChunkSize. Break those down further so no
+    // piece ever exceeds maxChunkSize — embedding APIs enforce hard input token limits.
+    const pieces = [];
+    for (const paragraph of paragraphs) {
+      if (paragraph.length <= maxChunkSize) {
+        pieces.push(paragraph);
+      } else {
+        const step = Math.max(1, maxChunkSize - overlap);
+        for (let i = 0; i < paragraph.length; i += step) {
+          pieces.push(paragraph.slice(i, i + maxChunkSize));
+        }
+      }
+    }
+
     const chunks = [];
     let currentChunk = '';
-    
-    for (const paragraph of paragraphs) {
-      // If adding this paragraph would exceed max size, save current chunk and start a new one
-      if (currentChunk.length + paragraph.length > maxChunkSize && currentChunk.length > 0) {
+
+    for (const piece of pieces) {
+      // If adding this piece would exceed max size, save current chunk and start a new one
+      if (currentChunk.length + piece.length > maxChunkSize && currentChunk.length > 0) {
         chunks.push(currentChunk.trim());
-        
+
         // Start new chunk with overlap from the end of the previous chunk
-        const overlapText = currentChunk.length > overlap 
-          ? currentChunk.slice(-overlap) 
+        const overlapText = currentChunk.length > overlap
+          ? currentChunk.slice(-overlap)
           : currentChunk;
-        
-        currentChunk = overlapText + ' ' + paragraph;
+
+        currentChunk = overlapText + ' ' + piece;
       } else {
-        // Add paragraph to current chunk
+        // Add piece to current chunk
         if (currentChunk.length > 0) {
           currentChunk += ' ';
         }
-        currentChunk += paragraph;
+        currentChunk += piece;
       }
     }
-    
+
     // Add the last chunk if it's not empty
     if (currentChunk.trim().length > 0) {
       chunks.push(currentChunk.trim());
     }
-    
+
     return chunks;
   }
 

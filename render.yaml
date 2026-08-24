@@ -27,6 +27,11 @@ services:
         sync: false
       - key: REACT_APP_OPENROUTER_API_KEY
         sync: false
+      # Firebase Admin SDK service account JSON (single line) — required to authorize
+      # /api/admin/* routes. Generate at: Firebase Console > Project Settings >
+      # Service Accounts > Generate new private key.
+      - key: FIREBASE_SERVICE_ACCOUNT_KEY
+        sync: false
       - key: PDF_URL
         value: "https://4.files.edl.io/f7e7/02/04/25/231513-8c9f8c2e-257a-49e3-8c4c-ef249811b38e.pdf"
       # Turso cloud SQLite — persistent across restarts (free tier, no disk needed)

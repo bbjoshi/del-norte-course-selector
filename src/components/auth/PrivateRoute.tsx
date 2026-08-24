@@ -9,10 +9,6 @@ interface PrivateRouteProps {
 const PrivateRoute: React.FC<PrivateRouteProps> = ({ children }) => {
   const { currentUser, loading } = useAuth();
 
-  // For testing purposes, bypass authentication check
-  // TEMPORARY: Remove this for production
-  const bypassAuth = true;
-
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
@@ -21,8 +17,7 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children }) => {
     );
   }
 
-  // Allow access even without authentication for testing
-  return bypassAuth || currentUser ? <>{children}</> : <Navigate to="/login" />;
+  return currentUser ? <>{children}</> : <Navigate to="/login" />;
 };
 
 export default PrivateRoute;

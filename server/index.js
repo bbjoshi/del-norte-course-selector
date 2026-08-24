@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const rateLimit = require('express-rate-limit');
 const path = require('path');const fs = require('fs');
 // pdf-parse v2.x changed to a class-based API — wrap it to match v1 function signature
 const { PDFParse } = require('pdf-parse');
@@ -133,12 +134,40 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// Baseline volumetric protection for all API routes
+const generalApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api', generalApiLimiter);
+
+// Stricter limits for endpoints that call out to OpenRouter/Claude (real money per request)
+const aiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down and try again in a few minutes.' },
+});
+
+// Even stricter for document upload/analysis (OCR + Claude Vision, heavier per call)
+const documentLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many document uploads. Please try again later.' },
+});
+
 // Serve static files from the React build
 app.use(express.static(path.join(__dirname, '..', 'build')));
 
-// Import and use admin routes
+// Import and use admin routes (protected: caller must be a signed-in Firebase user with role === 'admin')
 const adminRoutes = require('./routes/admin');
-app.use('/api/admin', adminRoutes);
+const requireAdmin = require('./middleware/requireAdmin');
+app.use('/api/admin', requireAdmin, adminRoutes);
 
 // === DOCUMENT UPLOAD ENDPOINT (PDF, images, any document) ===
 const multerUpload = require('multer');
@@ -285,7 +314,7 @@ Output ONLY the extracted text, no commentary.`
   return { text, confidence };
 }
 
-app.post('/api/document/upload', documentUpload.single('document'), async (req, res) => {
+app.post('/api/document/upload', documentLimiter, documentUpload.single('document'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
@@ -359,7 +388,7 @@ app.post('/api/document/upload', documentUpload.single('document'), async (req, 
 });
 
 // Keep old endpoint for backward compatibility
-app.post('/api/transcript/upload', documentUpload.single('transcript'), async (req, res) => {
+app.post('/api/transcript/upload', documentLimiter, documentUpload.single('transcript'), async (req, res) => {
   // Redirect to new endpoint logic
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
@@ -384,7 +413,7 @@ app.post('/api/transcript/upload', documentUpload.single('transcript'), async (r
 });
 
 // === AGENTIC DOCUMENT ANALYSIS ENDPOINT ===
-app.post('/api/document/analyze', async (req, res) => {
+app.post('/api/document/analyze', documentLimiter, async (req, res) => {
   try {
     const { text, filename } = req.body;
     if (!text) {
@@ -699,7 +728,7 @@ app.get('/api/pdf/search', (req, res) => {
 });
 
 // Claude API proxy endpoint
-app.post('/api/chat', async (req, res) => {
+app.post('/api/chat', aiLimiter, async (req, res) => {
   try {
     const openRouterApiKey = process.env.REACT_APP_OPENROUTER_API_KEY;
     if (!openRouterApiKey) {
@@ -956,7 +985,7 @@ All of these documents are available and searchable. The specific excerpts shown
 });
 
 // Summarize conversation endpoint
-app.post('/api/summarize', async (req, res) => {
+app.post('/api/summarize', aiLimiter, async (req, res) => {
   try {
     const openRouterApiKey = process.env.REACT_APP_OPENROUTER_API_KEY;
     if (!openRouterApiKey) {
@@ -998,7 +1027,7 @@ app.post('/api/summarize', async (req, res) => {
 });
 
 // Vector search endpoint
-app.get('/api/vector-search', async (req, res) => {
+app.get('/api/vector-search', aiLimiter, async (req, res) => {
   try {
     const { query } = req.query;
     if (!query) {

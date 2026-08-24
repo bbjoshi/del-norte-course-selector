@@ -125,6 +125,12 @@ const AdminPanel: React.FC = () => {
     });
 
     try {
+      if (!currentUser) {
+        throw new Error('You must be signed in as an admin to do this.');
+      }
+      const idToken = await currentUser.getIdToken();
+      const authHeader = { Authorization: `Bearer ${idToken}` };
+
       // Create FormData for file upload
       const formData = new FormData();
       formData.append('pdf', selectedFile);
@@ -134,6 +140,7 @@ const AdminPanel: React.FC = () => {
       const uploadResponse = await axios.post('/api/admin/upload-catalog', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
+          ...authHeader,
         },
       });
 
@@ -150,7 +157,9 @@ const AdminPanel: React.FC = () => {
         message: 'Generating embeddings... This may take several minutes.',
       }));
 
-      const embeddingsResponse = await axios.post('/api/admin/regenerate-embeddings');
+      const embeddingsResponse = await axios.post('/api/admin/regenerate-embeddings', null, {
+        headers: authHeader,
+      });
 
       if (!embeddingsResponse.data.success) {
         throw new Error(embeddingsResponse.data.error || 'Embeddings generation failed');
@@ -199,7 +208,13 @@ const AdminPanel: React.FC = () => {
 
   const handleClearCache = async () => {
     try {
-      const response = await axios.post('/api/admin/clear-cache');
+      if (!currentUser) {
+        throw new Error('You must be signed in as an admin to do this.');
+      }
+      const idToken = await currentUser.getIdToken();
+      const response = await axios.post('/api/admin/clear-cache', null, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
       toast({
         title: 'Cache Cleared',
         description: `Cleared ${response.data.clearedEntries} cached embeddings.`,

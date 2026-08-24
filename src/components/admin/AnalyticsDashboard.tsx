@@ -117,7 +117,7 @@ const eventTypeColor = (eventType: string): string => {
 };
 
 const AnalyticsDashboard: React.FC = () => {
-  const { isAdmin } = useAuth();
+  const { isAdmin, currentUser } = useAuth();
   const navigate = useNavigate();
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -130,7 +130,13 @@ const AnalyticsDashboard: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await axios.get('/api/admin/analytics');
+      if (!currentUser) {
+        throw new Error('You must be signed in as an admin to view analytics.');
+      }
+      const idToken = await currentUser.getIdToken();
+      const response = await axios.get('/api/admin/analytics', {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
       if (response.data.success) {
         setAnalytics(response.data.analytics);
         setLastRefresh(new Date());
@@ -143,7 +149,7 @@ const AnalyticsDashboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentUser]);
 
   useEffect(() => {
     if (!isAdmin) {

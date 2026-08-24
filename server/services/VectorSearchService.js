@@ -6,12 +6,15 @@ const DatabaseService = require('./DatabaseService');
  * Service for handling vector search operations
  * Now backed by SQLite for persistent storage
  */
+// Real embeddings model served via OpenRouter's OpenAI-compatible /embeddings endpoint
+const EMBEDDING_MODEL = 'openai/text-embedding-3-small';
+
 class VectorSearchService {
   constructor() {
     this.inMemoryVectors = [];
     this.vectorSearchAvailable = false;
     this.retryCount = 0;
-    
+
     // Load vectors from database into memory for fast search (async)
     this._loadPromise = this.loadFromDatabase();
   }
@@ -38,25 +41,26 @@ class VectorSearchService {
   }
 
   /**
-   * Create a hash of the text for caching purposes
+   * Create a hash of the text for caching purposes.
+   * Keyed by model so switching embedding models can never mix incompatible vector spaces —
+   * old cache entries from a different model are simply cache misses, not silently reused.
    */
   hashText(text) {
-    return crypto.createHash('md5').update(text).digest('hex');
+    return crypto.createHash('md5').update(`${EMBEDDING_MODEL}:${text}`).digest('hex');
   }
 
   /**
-   * Generate embeddings using Claude via OpenRouter's chat completions API
+   * Generate real semantic embeddings via OpenRouter's OpenAI-compatible /embeddings endpoint.
    */
   async generateEmbeddings(texts) {
     try {
       console.log('Generating embeddings for', texts.length, 'text chunks');
-      console.log('Using API key:', process.env.REACT_APP_OPENROUTER_API_KEY ? 'Available' : 'Not available');
-      
+
       if (!texts || !Array.isArray(texts) || texts.length === 0) {
         console.error('Invalid input for embeddings generation');
         return [];
       }
-      
+
       if (!process.env.REACT_APP_OPENROUTER_API_KEY) {
         console.error('OpenRouter API key is missing');
         return [];
@@ -65,13 +69,13 @@ class VectorSearchService {
       // Check database cache for existing embeddings
       const cacheKeys = texts.map(text => this.hashText(text));
       const cachedResults = await Promise.all(cacheKeys.map(key => DatabaseService.getCachedEmbedding(key)));
-      
+
       // If all texts are in cache, return cached embeddings
       if (cachedResults.every(result => result !== null)) {
         console.log(`Database cache hit! Using ${texts.length} cached embeddings`);
         return cachedResults;
       }
-      
+
       // Identify which texts need embeddings generated
       const textsToProcess = texts.filter((_, i) => cachedResults[i] === null);
       if (textsToProcess.length < texts.length) {
@@ -79,34 +83,20 @@ class VectorSearchService {
       } else {
         console.log('Cache miss. Generating embeddings for all texts');
       }
-      
+
       if (textsToProcess.length === 0) {
         return cachedResults;
       }
-      
-      console.log('Making request to OpenRouter API...');
+
+      console.log(`Requesting ${EMBEDDING_MODEL} embeddings from OpenRouter...`);
       const startTime = Date.now();
-      
+
       const response = await axios.post(
-        'https://openrouter.ai/api/v1/chat/completions',
+        'https://openrouter.ai/api/v1/embeddings',
         {
-          model: 'anthropic/claude-3-haiku',
-          messages: [
-            { 
-              role: 'system', 
-              content: 'You are a specialized AI that generates semantic vector embeddings for text. ' +
-                'For each input text, create a numerical vector representation that captures its semantic meaning. ' +
-                '\n\nIMPORTANT: Respond ONLY with a JSON array of embeddings. Each embedding should be an array of 100 floating point numbers between -1 and 1. ' +
-                'Format your response as valid JSON that can be parsed with JSON.parse().' +
-                '\n\nExample response format:\n```json\n[\n  [0.1, 0.2, 0.3, ...]\n]\n```\nDo not include any explanations or other text outside the JSON.'
-            },
-            { 
-              role: 'user', 
-              content: 'Generate semantic vector embeddings for the following text(s). Return ONLY a JSON array of embeddings:\n\n' +
-                textsToProcess.join('\n\n---\n\n')
-            }
-          ],
-          user: 'del-norte-course-selector'
+          model: EMBEDDING_MODEL,
+          input: textsToProcess,
+          encoding_format: 'float',
         },
         {
           headers: {
@@ -118,81 +108,61 @@ class VectorSearchService {
           timeout: 30000
         }
       );
-      
+
       const requestDuration = Date.now() - startTime;
-      console.log(`OpenRouter API request completed in ${requestDuration}ms`);
-      
-      if (!response.data?.choices?.[0]?.message?.content) {
-        console.error('Invalid response from OpenRouter API');
-        return [];
+      console.log(`OpenRouter embeddings request completed in ${requestDuration}ms`);
+
+      const data = response.data?.data;
+      if (!Array.isArray(data) || data.length === 0) {
+        console.error('Invalid response from OpenRouter embeddings API');
+        return texts.map((_, i) => cachedResults[i] || []);
       }
-      
-      const content = response.data.choices[0].message.content;
-      let generatedEmbeddings = [];
-      
-      try {
-        const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/) || 
-                          content.match(/\{[\s\S]*"vectors"[\s\S]*\}/) ||
-                          content.match(/\[[\s\S]*\]/);
-                          
-        if (jsonMatch) {
-          const jsonContent = jsonMatch[1] || jsonMatch[0];
-          const parsed = JSON.parse(jsonContent);
-          
-          if (Array.isArray(parsed)) {
-            generatedEmbeddings = parsed;
-          } else if (parsed.vectors) {
-            generatedEmbeddings = parsed.vectors;
-          } else if (parsed.embeddings) {
-            generatedEmbeddings = parsed.embeddings;
-          }
+
+      // Response items include an `index` matching their position in the request's `input` array
+      const generatedEmbeddings = new Array(textsToProcess.length);
+      data.forEach(item => {
+        if (typeof item.index === 'number' && Array.isArray(item.embedding)) {
+          generatedEmbeddings[item.index] = item.embedding;
         }
-        
-        if (generatedEmbeddings.length > 0) {
-          console.log('Successfully parsed embeddings from Claude response');
-        } else {
-          throw new Error('Could not parse embeddings');
-        }
-      } catch (parseError) {
-        console.warn('Falling back to TF-IDF embedding generation');
-        generatedEmbeddings = this._generateFallbackEmbeddings(textsToProcess, content);
-      }
-      
+      });
+
       // Store new embeddings in database cache (fire-and-forget, don't block)
       textsToProcess.forEach((text, i) => {
-        if (i < generatedEmbeddings.length) {
+        if (generatedEmbeddings[i]) {
           const key = this.hashText(text);
           DatabaseService.setCachedEmbedding(key, generatedEmbeddings[i]).catch(e =>
             console.warn('Failed to cache embedding:', e.message)
           );
         }
       });
-      
-      // Combine cached and newly generated embeddings
+
+      // Combine cached and newly generated embeddings, preserving original order
+      let processedIndex = 0;
       const finalEmbeddings = texts.map((text, i) => {
         if (cachedResults[i] !== null) {
           return cachedResults[i];
         }
-        const index = textsToProcess.indexOf(text);
-        return index < generatedEmbeddings.length ? generatedEmbeddings[index] : [];
+        const embedding = generatedEmbeddings[processedIndex] || [];
+        processedIndex++;
+        return embedding;
       });
-      
+
       console.log('Successfully generated', finalEmbeddings.length, 'embeddings');
-      if (finalEmbeddings.length > 0) {
-        console.log('Sample embedding length:', finalEmbeddings[0].length);
+      if (finalEmbeddings.length > 0 && finalEmbeddings[0].length > 0) {
+        console.log('Embedding dimensions:', finalEmbeddings[0].length);
       }
-      
+
       this.retryCount = 0;
       return finalEmbeddings;
     } catch (error) {
       console.error('Error generating embeddings:', error.message);
-      
+
       if (error.response?.status === 429) {
         const waitTime = Math.min(Math.pow(2, this.retryCount || 0) * 1000, 30000);
         console.log(`Rate limited. Waiting ${waitTime}ms...`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
         this.retryCount = (this.retryCount || 0) + 1;
-        
+
         if (texts.length > 1) {
           const halfLength = Math.ceil(texts.length / 2);
           const firstHalf = await this.generateEmbeddings(texts.slice(0, halfLength));
@@ -201,45 +171,18 @@ class VectorSearchService {
         }
         return this.generateEmbeddings(texts);
       }
-      
+
       if (error.response) {
         console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data));
         if (error.response.status === 401 || error.response.status === 403) {
           console.error('Authentication error. Check API key.');
         }
       }
-      
+
       this.retryCount = 0;
       return [];
     }
-  }
-
-  /**
-   * Fallback embedding generation using TF-IDF approach
-   */
-  _generateFallbackEmbeddings(texts, content) {
-    const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 0);
-    const allWords = content.toLowerCase().split(/\W+/).filter(w => w.length > 2);
-    const wordFreq = {};
-    allWords.forEach(word => { wordFreq[word] = (wordFreq[word] || 0) + 1; });
-    
-    return texts.map(text => {
-      const textWords = text.toLowerCase().split(/\W+/).filter(w => w.length > 2);
-      const vector = [];
-      
-      Object.keys(wordFreq).slice(0, 100).forEach(word => {
-        const count = textWords.filter(w => w === word).length;
-        const tf = count / Math.max(1, textWords.length);
-        const idf = Math.log(sentences.length / Math.max(1, sentences.filter(s => s.includes(word)).length));
-        vector.push(tf * idf);
-      });
-      
-      vector.push(text.length / 1000);
-      vector.push(textWords.length / 100);
-      
-      while (vector.length < 100) vector.push(0);
-      return vector;
-    });
   }
 
   /**
