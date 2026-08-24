@@ -98,7 +98,7 @@ class ChatService {
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${openRouterApiKey}`,
-            'HTTP-Referer': 'https://del-norte-course-selector.vercel.app',
+            'HTTP-Referer': 'https://del-norte-course-selector-60lg.onrender.com',
             'X-Title': 'Del Norte Course Selector'
           }
         }
@@ -189,7 +189,7 @@ class ChatService {
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${openRouterApiKey}`,
-            'HTTP-Referer': 'https://del-norte-course-selector.vercel.app',
+            'HTTP-Referer': 'https://del-norte-course-selector-60lg.onrender.com',
             'X-Title': 'Del Norte Course Selector'
           }
         }

@@ -112,7 +112,7 @@ class VectorSearchService {
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${process.env.REACT_APP_OPENROUTER_API_KEY}`,
-            'HTTP-Referer': 'https://del-norte-course-selector.vercel.app',
+            'HTTP-Referer': 'https://del-norte-course-selector-60lg.onrender.com',
             'X-Title': 'Del Norte Course Selector'
           },
           timeout: 30000

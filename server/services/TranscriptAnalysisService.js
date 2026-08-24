@@ -129,7 +129,7 @@ RULES:
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey}`,
-          'HTTP-Referer': 'https://del-norte-course-selector.vercel.app',
+          'HTTP-Referer': 'https://del-norte-course-selector-60lg.onrender.com',
           'X-Title': 'Del Norte Course Selector - Transcript Parser',
         },
         timeout: 30000,

@@ -121,9 +121,7 @@ async function processPDFForVectorDB(pdfBuffer, documentType = 'catalog', forceR
 // Enable CORS for production and development
 app.use(cors({
   origin: [
-    'https://del-norte-course-selector.vercel.app',
-    'https://del-norte-course-selector.herokuapp.com',
-    'https://del-norte-course-selector.onrender.com',
+    'https://del-norte-course-selector-60lg.onrender.com',
     'http://localhost:3002',
     'http://localhost:3000'
   ],
@@ -256,7 +254,7 @@ Output ONLY the extracted text, no commentary.`
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${openRouterApiKey}`,
-            'HTTP-Referer': 'https://del-norte-course-selector.vercel.app',
+            'HTTP-Referer': 'https://del-norte-course-selector-60lg.onrender.com',
             'X-Title': 'Del Norte Course Selector - Document OCR',
           },
           timeout: 60000,
@@ -936,7 +934,7 @@ All of these documents are available and searchable. The specific excerpts shown
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${openRouterApiKey}`,
-          'HTTP-Referer': 'https://del-norte-course-selector.vercel.app',
+          'HTTP-Referer': 'https://del-norte-course-selector-60lg.onrender.com',
           'X-Title': 'Del Norte Course Selector'
         }
       }
@@ -982,7 +980,7 @@ app.post('/api/summarize', async (req, res) => {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${openRouterApiKey}`,
-          'HTTP-Referer': 'https://del-norte-course-selector.vercel.app',
+          'HTTP-Referer': 'https://del-norte-course-selector-60lg.onrender.com',
           'X-Title': 'Del Norte Course Selector'
         }
       }
