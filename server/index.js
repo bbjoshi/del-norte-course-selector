@@ -835,15 +835,16 @@ app.post('/api/chat', aiLimiter, async (req, res) => {
 The following documents have been loaded and vectorized for reference (${vectorCount} total vectors):
 ${loadedDocuments.map((d, i) => `${i + 1}. ${d}`).join('\n')}
 
-All of these documents are available and searchable. The specific excerpts shown below were retrieved as most relevant to the current query, but you have knowledge from ALL loaded documents.
 `;
-    
-    relevantInfo = documentInventory + '\n' + relevantInfo;
 
-    // Plans must cover every subject area, so give the model the complete
-    // graduation and UC a-g requirements rather than relying on retrieval
-    if (isPlanningQuery(userQuery)) {
-      relevantInfo += '\n' + await getPlanningContext();
+    // Plans must cover every subject area, which retrieved excerpts can't
+    // guarantee, so planning queries get the complete catalog and
+    // graduation/UC requirements in place of excerpts
+    const planningContext = isPlanningQuery(userQuery) ? await getPlanningContext() : '';
+    if (planningContext && PDFService.getPDFContent()) {
+      relevantInfo = documentInventory + '\nThe complete Course Catalog, Graduation Requirements and UC a-g requirements are provided in full above.';
+    } else {
+      relevantInfo = documentInventory + '\nThe excerpts below were retrieved as most relevant to the current query. Information not shown here is not available to you.\n\n' + relevantInfo;
     }
 
     // Include student uploaded document if provided (transcript, report card, schedule, etc.)
@@ -892,14 +893,15 @@ All of these documents are available and searchable. The specific excerpts shown
     }
 
     // Prepare the system message with instructions and relevant info
-    const systemMessage = {
-      role: 'system',
-      content: `
+    // Instructions (and, for plans, the full catalog) are identical across
+    // requests, so they go first under a cache breakpoint; OpenRouter then
+    // bills repeat requests at the much cheaper cache-read rate
+    const staticInstructions = `
         You are a helpful course recommendation and student guidance assistant for Del Norte High School. You have access to the Course Catalog, the Student Handbook, the Graduation Requirements document, and (for planning questions) the UC a-g admission requirements to provide comprehensive information about courses, school policies, graduation requirements, and student life.
 
         === CRITICAL RULES — ANTI-HALLUCINATION GUARDRAILS ===
         
-        1. **ONLY use information from the "Available Reference Information" section below.** Do NOT invent, fabricate, or assume any course names, course codes, prerequisites, policies, requirements, or other details that are not explicitly stated in the reference information.
+        1. **ONLY use information from the reference sections in this prompt** (the full documents provided for planning questions, and the "Available Reference Information" section). Do NOT invent, fabricate, or assume any course names, course codes, prerequisites, policies, requirements, or other details that are not explicitly stated in the reference information.
         
         2. **If the reference information does not contain enough detail to answer a question, say so explicitly.** For example: "Based on the documents I have access to, I don't have specific information about [topic]. I recommend checking with your school counselor or visiting the Del Norte High School website for the most up-to-date details."
         
@@ -952,6 +954,19 @@ All of these documents are available and searchable. The specific excerpts shown
            - Help students understand how courses fit into their overall academic journey
            - Always err on the side of transparency — "I don't see that in the documents" is better than a guess
 
+`;
+
+    const systemMessage = {
+      role: 'system',
+      content: [
+        {
+          type: 'text',
+          text: staticInstructions + planningContext,
+          cache_control: { type: 'ephemeral' }
+        },
+        {
+          type: 'text',
+          text: `
         === AVAILABLE REFERENCE INFORMATION ===
         ${relevantInfo}
         ${transcriptSection}
@@ -962,6 +977,8 @@ All of these documents are available and searchable. The specific excerpts shown
         - If the reference information above is empty or says "I couldn't find any specific information," tell the user you don't have enough information to answer accurately and suggest they consult a counselor
         - NEVER make up information. When in doubt, say you're not sure and recommend verifying with school staff.
       `
+        }
+      ]
     };
 
     // Create a new array with the system message followed by the conversation history

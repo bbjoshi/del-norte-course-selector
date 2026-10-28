@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { PDFParse } = require('pdf-parse');
+const PDFService = require('./PDFService');
 
 const REFERENCES_DIR = path.join(__dirname, '..', '..', 'references');
 
@@ -57,15 +58,21 @@ function isPlanningQuery(query) {
 }
 
 /**
- * Full graduation and UC a-g requirements, for planning queries where
- * retrieved excerpts alone leave out whole subject areas
+ * Full course catalog plus graduation and UC a-g requirements, for planning
+ * queries where retrieved excerpts alone leave out whole subject areas.
+ * Kept byte-stable between requests so it can be prompt-cached.
  */
 async function getPlanningContext() {
+  // The live catalog (startup reference PDF, or an admin upload)
+  const catalogText = (PDFService.getPDFContent() || '').trim();
+  const catalogSection = catalogText
+    ? `\n=== COURSE CATALOG (full document) ===\n${catalogText}\n`
+    : '';
   const gradText = await loadGraduationRequirements();
   const gradSection = gradText
     ? `\n=== DEL NORTE GRADUATION REQUIREMENTS (full document) ===\n${gradText}\n`
     : '';
-  return gradSection + UC_REQUIREMENTS;
+  return catalogSection + gradSection + UC_REQUIREMENTS;
 }
 
 module.exports = { isPlanningQuery, getPlanningContext };
