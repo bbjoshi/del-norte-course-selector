@@ -249,7 +249,7 @@ async function extractTextFromImage(imageBuffer, mimetype) {
       const response = await axios.post(
         'https://openrouter.ai/api/v1/chat/completions',
         {
-          model: 'anthropic/claude-sonnet-4',
+          model: 'anthropic/claude-sonnet-5.5',
           messages: [
             {
               role: 'user',
@@ -955,7 +955,7 @@ All of these documents are available and searchable. The specific excerpts shown
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'anthropic/claude-sonnet-4',
+        model: 'anthropic/claude-sonnet-5.5',
         messages: messages,
         max_tokens: 4000
       },
@@ -1001,7 +1001,7 @@ app.post('/api/summarize', aiLimiter, async (req, res) => {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'anthropic/claude-3-haiku',  // Using a smaller model for summarization
+        model: 'anthropic/claude-haiku-5.5',  // Using a smaller model for summarization
         messages: messages,
         max_tokens: 1000
       },
