@@ -18,6 +18,7 @@ const port = process.env.PORT || 3003;
 const VectorSearchService = require('./services/VectorSearchService');
 const PDFService = require('./services/PDFService');
 const SearchService = require('./services/SearchService');
+const { isPlanningQuery, getPlanningContext } = require('./services/PlanningContext');
 const ChatService = require('./services/ChatService');
 const DatabaseService = require('./services/DatabaseService');
 const TranscriptAnalysisService = require('./services/TranscriptAnalysisService');
@@ -727,6 +728,12 @@ app.get('/api/pdf/search', (req, res) => {
   }
 });
 
+// Planning queries (4-year plans, pathways) need a broad slice of the catalog,
+// not just the handful of chunks that suit a single-course question
+function vectorTopK(query) {
+  return isPlanningQuery(query) ? 25 : 5;
+}
+
 // Claude API proxy endpoint
 app.post('/api/chat', aiLimiter, async (req, res) => {
   try {
@@ -766,7 +773,7 @@ app.post('/api/chat', aiLimiter, async (req, res) => {
     // If no relevant info was provided, search for it
     if (!relevantInfo) {
       // Search ALL vectors for relevant content (retrieve from all documents)
-      const vectorResults = await VectorSearchService.search(userQuery, 5);
+      const vectorResults = await VectorSearchService.search(userQuery, vectorTopK(userQuery));
       console.log(`Found ${vectorResults.length} results from vector search`);
       
       // Combine vector search results
@@ -831,6 +838,12 @@ All of these documents are available and searchable. The specific excerpts shown
     
     relevantInfo = documentInventory + '\n' + relevantInfo;
 
+    // Plans must cover every subject area, so give the model the complete
+    // graduation and UC a-g requirements rather than relying on retrieval
+    if (isPlanningQuery(userQuery)) {
+      relevantInfo += '\n' + await getPlanningContext();
+    }
+
     // Include student uploaded document if provided (transcript, report card, schedule, etc.)
     const transcriptText = req.body.transcriptText || '';
     const transcriptFilename = req.body.transcriptFilename || '';
@@ -880,7 +893,7 @@ All of these documents are available and searchable. The specific excerpts shown
     const systemMessage = {
       role: 'system',
       content: `
-        You are a helpful course recommendation and student guidance assistant for Del Norte High School. You have access to the Course Catalog, the Student Handbook, and the Graduation Requirements document to provide comprehensive information about courses, school policies, graduation requirements, and student life.
+        You are a helpful course recommendation and student guidance assistant for Del Norte High School. You have access to the Course Catalog, the Student Handbook, the Graduation Requirements document, and (for planning questions) the UC a-g admission requirements to provide comprehensive information about courses, school policies, graduation requirements, and student life.
 
         === CRITICAL RULES — ANTI-HALLUCINATION GUARDRAILS ===
         
@@ -892,7 +905,7 @@ All of these documents are available and searchable. The specific excerpts shown
         
         4. **Never fabricate graduation requirements, credit counts, or GPA thresholds.** Only state requirements that are explicitly listed in the reference documents.
         
-        5. **Cite your source when possible.** When providing information, indicate whether it comes from the Course Catalog, Student Handbook, or Graduation Requirements document.
+        5. **Cite your source when possible.** When providing information, indicate whether it comes from the Course Catalog, Student Handbook, Graduation Requirements document, or UC a-g requirements.
         
         6. **When you are uncertain or the documents are ambiguous, clearly communicate that uncertainty** rather than presenting uncertain information as fact.
 
@@ -921,9 +934,10 @@ All of these documents are available and searchable. The specific excerpts shown
            - Organize recommendations by grade level (9-12) with clear headings for each year
            - ONLY suggest courses that exist in the Course Catalog reference information
            - Carefully follow prerequisite requirements mentioned in the catalog
-           - Ensure graduation requirements from the documents are met
+           - Ensure every Del Norte graduation requirement (credits per subject area, PE/Health, electives) is met, and show a short credit tally against the requirements
+           - Ensure the UC a-g requirements are met (areas A-G, 11 courses before senior year), and note where the plan exceeds the minimums (e.g. 4th year of math, 3rd year of science or language)
+           - Use each course's UC/CSU area exactly as stated in the catalog when mapping courses to a-g areas
            - Balance course load difficulty appropriately for each grade level
-           - Consider UC/CSU A-G requirements if college-bound, but only cite specific A-G categories if stated in the documents
 
         5. When recommending courses:
            - ONLY recommend courses that are explicitly listed in the reference information
@@ -942,7 +956,7 @@ All of these documents are available and searchable. The specific excerpts shown
         === REMINDERS ===
         - Maintain context from the conversation history
         - Reference previous questions and answers when appropriate to provide continuity
-        - Always indicate the source document (Course Catalog, Student Handbook, or Graduation Requirements) when citing specific information
+        - Always indicate the source document (Course Catalog, Student Handbook, Graduation Requirements, or UC a-g requirements) when citing specific information
         - If the reference information above is empty or says "I couldn't find any specific information," tell the user you don't have enough information to answer accurately and suggest they consult a counselor
         - NEVER make up information. When in doubt, say you're not sure and recommend verifying with school staff.
       `
@@ -1049,7 +1063,7 @@ app.get('/api/vector-search', aiLimiter, async (req, res) => {
       return res.status(200).json({ results: [] }); // Return empty results to trigger fallback
     }
     
-    const results = await VectorSearchService.search(query, 5);
+    const results = await VectorSearchService.search(query, vectorTopK(query));
     res.json({ results });
   } catch (error) {
     console.error('Error searching vector database:', error.message);

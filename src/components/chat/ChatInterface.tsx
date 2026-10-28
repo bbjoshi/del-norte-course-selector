@@ -30,6 +30,7 @@ import {
 } from '@chakra-ui/react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import './ChatInterface.css';
 import { PDFService } from '../../services/PDFService';
 import { ChatService } from '../../services/ChatService';
@@ -588,7 +589,7 @@ const ChatInterface: React.FC = () => {
                 {message.sender === 'user' ? (
                   <Text fontSize="sm" fontWeight="medium" lineHeight="1.5">{message.text}</Text>
                 ) : (
-                  <Box className="markdown-content"><ReactMarkdown>{message.text}</ReactMarkdown></Box>
+                  <Box className="markdown-content"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown></Box>
                 )}
                 <Text fontSize="xs" color={message.sender === 'user' ? 'whiteAlpha.700' : 'gray.400'} mt={1} textAlign="right">
                   {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

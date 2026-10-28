@@ -251,8 +251,12 @@ class VectorSearchService {
         score: this.cosineSimilarity(queryEmbedding, item.embedding)
       }));
       
+      // Dedupe identical chunks (the same text can be indexed more than once)
+      // so duplicates don't eat into the topK slots
+      const seen = new Set();
       const topResults = scoredResults
         .sort((a, b) => b.score - a.score)
+        .filter(item => !seen.has(item.text) && seen.add(item.text))
         .slice(0, topK)
         .map(item => item.text);
       
