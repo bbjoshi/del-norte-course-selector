@@ -13,6 +13,8 @@ async function pdfParse(buffer) {
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const app = express();
+// Render sits behind a proxy; trust its X-Forwarded-For so rate limits are per client IP
+app.set('trust proxy', 1);
 const port = process.env.PORT || 3003;
 
 const VectorSearchService = require('./services/VectorSearchService');
@@ -971,7 +973,9 @@ All of these documents are available and searchable. The specific excerpts shown
       {
         model: 'anthropic/claude-sonnet-5.5',
         messages: messages,
-        max_tokens: 4000
+        // Plans with tables and credit tallies run long, and any reasoning
+        // tokens count against this cap too
+        max_tokens: 16000
       },
       {
         headers: {
@@ -983,12 +987,20 @@ All of these documents are available and searchable. The specific excerpts shown
       }
     );
     
-    console.log('Received response from OpenRouter');
-    
+    const choice = response.data.choices?.[0];
+    console.log('Received response from OpenRouter', {
+      finishReason: choice?.finish_reason,
+      usage: response.data.usage,
+    });
+
+    // An empty answer (e.g. the token cap was spent before any text) should
+    // surface as an error, not a blank chat bubble
+    if (!choice?.message?.content?.trim()) {
+      throw new Error(`Empty response from model (finish_reason: ${choice?.finish_reason})`);
+    }
+
     // OpenRouter already returns in the expected format
-    const transformedResponse = response.data;
-    
-    res.json(transformedResponse);
+    res.json(response.data);
   } catch (error) {
     console.error('Error calling OpenRouter API:', error);
     res.status(500).json({ 
