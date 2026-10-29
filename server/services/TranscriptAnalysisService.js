@@ -123,6 +123,8 @@ RULES:
           }
         ],
         max_tokens: 3000,
+        // Structured extraction; reasoning would only eat the token budget
+        reasoning: { effort: 'none' },
         temperature: 0.1, // Low temperature for structured extraction
       },
       {

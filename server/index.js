@@ -281,6 +281,8 @@ Output ONLY the extracted text, no commentary.`
             },
           ],
           max_tokens: 4000,
+          // Plain transcription; reasoning would only eat the token budget
+          reasoning: { effort: 'none' },
         },
         {
           headers: {
@@ -990,9 +992,11 @@ ${loadedDocuments.map((d, i) => `${i + 1}. ${d}`).join('\n')}
       {
         model: 'anthropic/claude-sonnet-5.5',
         messages: messages,
-        // Plans with tables and credit tallies run long, and any reasoning
-        // tokens count against this cap too
-        max_tokens: 16000
+        // Reasoning tokens count against max_tokens, and uncapped they used
+        // all 16K on a 4-year plan, leaving no answer; cap them so ~12K is
+        // left for the response itself. exclude: the UI doesn't show reasoning
+        max_tokens: 16000,
+        reasoning: { max_tokens: 4000, exclude: true }
       },
       {
         headers: {
@@ -1046,7 +1050,8 @@ app.post('/api/summarize', aiLimiter, async (req, res) => {
       {
         model: 'anthropic/claude-haiku-5.5',  // Using a smaller model for summarization
         messages: messages,
-        max_tokens: 1000
+        max_tokens: 1000,
+        reasoning: { effort: 'none' }
       },
       {
         headers: {

@@ -92,7 +92,8 @@ class ChatService {
         {
           model: 'anthropic/claude-sonnet-5.5',
           messages: messages,
-          max_tokens: 4000
+          max_tokens: 16000,
+          reasoning: { max_tokens: 4000, exclude: true }
         },
         {
           headers: {
@@ -183,7 +184,8 @@ class ChatService {
         {
           model: 'anthropic/claude-haiku-5.5',  // Using a smaller model for summarization
           messages: messages,
-          max_tokens: 1000
+          max_tokens: 1000,
+          reasoning: { effort: 'none' }
         },
         {
           headers: {
